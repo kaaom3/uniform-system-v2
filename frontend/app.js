@@ -1,5 +1,5 @@
 // --- Global variables ---
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'https://uniform-system-hg0e.onrender.com';
 let currentUser = null;
 let masterStock = [];
 let userApprovedItems = []; 
