@@ -48,23 +48,40 @@ const logAdminAction = async (adminName, action, details) => {
 // ==========================================
 // 🤖 LINE WEBHOOK (ระบบตอบโต้อัตโนมัติ)
 // ==========================================
-// Token สำหรับให้บอทใช้ตอบกลับ (อ้างอิงจากไฟล์ lineNotify ของคุณ)
 const LINE_TOKEN = "69ZFTFWwfiK7hZQ/lMfA+5GyR7HAAA1XmntySY/YXigpjXV6vDsfyS5lM4dB/swrJxYTkGp3+eyHLZM0GfK/lIhEjMzB97yVy4+M9oCYkub7TgT5+xt1T6L25T0PQiQYeNDfJXR8/noB+ekYj0GdTgdB04t89/1O/w1cDnyilFU=";
 
 async function replyLineMessage(replyToken, text) {
     try {
-        await fetch('https://api.line.me/v2/bot/message/reply', {
+        // ข้ามกรณีที่เป็น Token ทดสอบจากการกด Verify ของระบบ LINE
+        if (replyToken === '00000000000000000000000000000000' || replyToken === 'ffffffffffffffffffffffffffffffff') {
+            return;
+        }
+
+        const response = await fetch('https://api.line.me/v2/bot/message/reply', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` },
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${LINE_TOKEN}` 
+            },
             body: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] })
         });
-    } catch (e) { console.error('LINE Reply Error:', e.message); }
+        
+        const result = await response.json();
+        console.log("📤 [LINE Reply Result]:", result);
+
+    } catch (e) { 
+        console.error('❌ [LINE Reply Error]:', e.message); 
+    }
 }
 
 app.post('/api/webhook/line', async (req, res) => {
     try {
         const events = req.body.events;
-        // ตอบกลับเซิร์ฟเวอร์ LINE กลับไปทันทีว่า "ได้รับข้อมูลแล้ว"
+        
+        // แจ้ง Log ให้รู้ว่า LINE ทักเข้ามาแล้ว!
+        console.log("📥 [LINE Webhook] ได้รับข้อมูล:", JSON.stringify(events, null, 2));
+
+        // ตอบกลับเซิร์ฟเวอร์ LINE กลับไปทันทีเพื่อไม่ให้ LINE แจ้งเตือน Timeout
         res.status(200).send('OK');
 
         if (!events || events.length === 0) return;
@@ -82,14 +99,12 @@ app.post('/api/webhook/line', async (req, res) => {
             if (event.type === 'message' && event.message.type === 'text') {
                 const text = event.message.text.trim();
 
-                // เช็คว่าพิมพ์คำว่า "ลืมรหัส" หรือไม่
                 if (text.startsWith('ลืมรหัส')) {
                     const username = text.replace('ลืมรหัส', '').trim();
                     
                     if (username) {
                         const user = await User.findOne({ username });
                         if (user) {
-                            // เซฟคำขอลงฐานข้อมูลให้แอดมินเห็น
                             await new PasswordReset({ username, status: 'Pending' }).save();
                             await replyLineMessage(replyToken, `รับเรื่องแล้ว! ⏳\nระบบได้ส่งคำขอรีเซ็ตรหัสผ่านของพนักงาน "${username}" ให้แอดมินแล้วครับ กรุณารอแอดมินแจ้งรหัสผ่านชั่วคราวให้ทราบครับ`);
                         } else {
@@ -102,7 +117,8 @@ app.post('/api/webhook/line', async (req, res) => {
             }
         }
     } catch (err) {
-        console.error("Webhook Error:", err);
+        console.error("❌ [Webhook Critical Error]:", err);
+        if (!res.headersSent) res.status(500).send('Error');
     }
 });
 
