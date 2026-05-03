@@ -5,6 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const https = require('https'); // 👈 เพิ่มโมดูลนี้เข้ามาเพื่อแทนที่ fetch
 
 // Models
 const User = require('./models/User');
@@ -48,30 +49,49 @@ const logAdminAction = async (adminName, action, details) => {
 // ==========================================
 // 🤖 LINE WEBHOOK (ระบบตอบโต้อัตโนมัติ)
 // ==========================================
-const LINE_TOKEN = "dCnA72Q1lQkAo6W2wY4q/3JLZiUJ0UqF3r/5H/kYLVylWAaab2u3FRxeNmJN536psAEbkV56INlKAoCMSfD9wF0CTxZ7x/WAgUKVv0warZ5lbiA1BTIdtwG26FuNFudDcHun6BslptbMbk6xpk5QdQdB04t89/1O/w1cDnyilFU=";
+const LINE_TOKEN = "Atb5cyLGBu82fm3ZXPdnZ3nNsoL5+KnpeVqv1expkFCsXb9bWX8LWrwc0keDtpjFJxYTkGp3+eyHLZM0GfK/lIhEjMzB97yVy4+M9oCYkuZEtBVBGU/GHMd3n9w09urwKcorN9VjfY2Px6sbTfvidAdB04t89/1O/w1cDnyilFU=";
 
+// เปลี่ยนมาใช้ https แทน fetch เพื่อป้องกัน Error บน Node.js เวอร์ชันเก่า
 async function replyLineMessage(replyToken, text) {
-    try {
+    return new Promise((resolve, reject) => {
         // ข้ามกรณีที่เป็น Token ทดสอบจากการกด Verify ของระบบ LINE
         if (replyToken === '00000000000000000000000000000000' || replyToken === 'ffffffffffffffffffffffffffffffff') {
-            return;
+            return resolve();
         }
 
-        const response = await fetch('https://api.line.me/v2/bot/message/reply', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json', 
-                'Authorization': `Bearer ${LINE_TOKEN}` 
-            },
-            body: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] })
+        const payload = JSON.stringify({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: text }]
         });
-        
-        const result = await response.json();
-        console.log("📤 [LINE Reply Result]:", result);
 
-    } catch (e) { 
-        console.error('❌ [LINE Reply Error]:', e.message); 
-    }
+        const options = {
+            hostname: 'api.line.me',
+            path: '/v2/bot/message/reply',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${LINE_TOKEN}`,
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => {
+                console.log(`📤 [LINE Reply Result]: HTTP ${res.statusCode}`, body);
+                resolve(body);
+            });
+        });
+
+        req.on('error', (e) => {
+            console.error('❌ [LINE Reply Error]:', e.message);
+            reject(e);
+        });
+
+        req.write(payload);
+        req.end();
+    });
 }
 
 app.post('/api/webhook/line', async (req, res) => {
@@ -150,6 +170,10 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ error: 'ไม่พบรหัสพนักงานนี้ในระบบ' });
         await new PasswordReset({ username, status: 'Pending' }).save();
+        
+        // ส่งแจ้งเตือนเข้าไปที่กลุ่มไลน์แอดมิน
+        sendPushMessage({ username: username }, 'รีเซ็ตรหัสผ่าน');
+        
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -345,17 +369,41 @@ app.get('/api/admin/pending-approvals', async (req, res) => {
 
 app.post('/api/admin/approve', async (req, res) => {
     try {
-        const { requestId, approvedQuantity, reason, adminUser } = req.body;
+        const { requestId, approvedQuantity, reason, stockType, adminUser } = req.body;
         const request = await Request.findOne({ requestId });
         const stock = await Stock.findOne({ itemType: request.itemType, size: request.size });
-        if (!stock || stock.newStock < approvedQuantity) throw new Error('สต็อกของใหม่ไม่พอ');
+        if (!stock) throw new Error('ไม่พบพัสดุในระบบ');
         
-        stock.newStock -= approvedQuantity; await stock.save();
-        await new StockTransaction({ itemType: request.itemType, size: request.size, transactionType: 'OUT', quantity: -Math.abs(approvedQuantity), reason: `เบิกจ่ายให้ ${request.requesterName}`, adminUser }).save();
+        const isUsed = stockType === 'Used';
 
-        request.status = 'Approved'; request.quantity = approvedQuantity; request.notes = `อนุมัติโดย ${adminUser} ${reason ? '(' + reason + ')' : ''}`; await request.save();
-        await logAdminAction(adminUser, 'Approval', `อนุมัติใบเบิก ${requestId}`);
+        if (isUsed) {
+            if (stock.usedStock < approvedQuantity) throw new Error('สต็อกของมือสองไม่พอ');
+            stock.usedStock -= approvedQuantity;
+        } else {
+            if (stock.newStock < approvedQuantity) throw new Error('สต็อกของใหม่ไม่พอ');
+            stock.newStock -= approvedQuantity;
+        }
+        
+        await stock.save();
+
+        const transactionType = isUsed ? 'OUT-USED' : 'OUT';
+        const reasonText = isUsed ? `เบิกจ่ายให้ ${request.requesterName} (มือสอง)` : `เบิกจ่ายให้ ${request.requesterName}`;
+
+        await new StockTransaction({ 
+            itemType: request.itemType, size: request.size, transactionType: transactionType, 
+            quantity: -Math.abs(approvedQuantity), reason: reasonText, adminUser 
+        }).save();
+
+        request.status = 'Approved'; 
+        request.quantity = approvedQuantity; 
+        request.notes = `อนุมัติโดย ${adminUser} ${isUsed ? '[จ่ายมือสอง]' : ''} ${reason ? '(' + reason + ')' : ''}`; 
+        await request.save();
+        
+        await logAdminAction(adminUser, 'Approval', `อนุมัติใบเบิก ${requestId} ${isUsed ? '(ของมือสอง)' : ''}`);
+        
+        // แจ้งผลการอนุมัติให้ผู้ใช้ทราบผ่าน LINE
         sendPushMessage(request, 'อนุมัติคำขอ'); 
+        
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

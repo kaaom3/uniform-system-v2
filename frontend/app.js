@@ -140,20 +140,38 @@ document.addEventListener('click', async function(e) {
         const card = e.target.closest('.approval-card');
         const quantityInput = card.querySelector('.approval-quantity-input');
         const reasonInput = card.querySelector('.approval-reason-input');
-        const stockTypeEl = card.querySelector(`input[name="approve-stock-type-${id}"]:checked`);
-        const stockType = stockTypeEl ? stockTypeEl.value : 'New';
+        
+        // 🔒 ตรวจสอบหาค่า Radio มือ 1 / มือ 2 ให้ชัวร์ 100%
+        const stockTypeRadios = card.querySelectorAll(`input[name="approve-stock-type-${id}"]`);
+        let stockType = 'New';
+        stockTypeRadios.forEach(radio => {
+            if (radio.checked) stockType = radio.value;
+        });
+        
         const approvedQuantity = parseInt(quantityInput.value);
         const originalQuantity = parseInt(quantityInput.max);
         const reason = reasonInput.value.trim();
         
+        // ดึงค่ายอดคงเหลือล่าสุดที่ถูกฝังไว้ใน Dataset
+        const newStock = parseInt(card.dataset.newStock) || 0;
+        const usedStock = parseInt(card.dataset.usedStock) || 0;
+
         if (isNaN(approvedQuantity) || approvedQuantity <= 0 || approvedQuantity > originalQuantity) {
             return showNotification(`จำนวนที่อนุมัติต้องอยู่ระหว่าง 1 ถึง ${originalQuantity}`, 'error');
+        }
+
+        // 🔒 ตรวจสอบสต็อกฝั่งหน้าเว็บให้ครอบคลุมก่อนส่งไปหลังบ้าน
+        if (stockType === 'Used' && approvedQuantity > usedStock) {
+            return showNotification(`❌ สต็อกมือสองไม่เพียงพอ (เหลือ ${usedStock} ชิ้น)`, 'error');
+        }
+        if (stockType === 'New' && approvedQuantity > newStock) {
+            return showNotification(`❌ สต็อกของใหม่ไม่เพียงพอ (เหลือ ${newStock} ชิ้น)`, 'error');
         }
         
         showLoadingButton(e.target, true);
         try {
             await apiCall('/api/admin/approve', 'POST', { requestId: id, approvedQuantity, reason, stockType, adminUser: currentUser.username });
-            onAdminActionSuccess('อนุมัติรายการสำเร็จ');
+            onAdminActionSuccess(`อนุมัติรายการสำเร็จ (ตัดสต็อก${stockType === 'Used' ? 'มือสอง' : 'ใหม่'})`);
         } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'อนุมัติคำขอ'); }
     }
 
@@ -589,7 +607,12 @@ function displayPendingApprovals(requests) {
             const stockItem = masterStock.find(stock => stock.itemType === type && stock.size === size);
             const newStockQty = stockItem ? stockItem.newStock : 0;
             const usedStockQty = stockItem ? stockItem.usedStock : 0;
-            content = `<div class="flex justify-between items-start"><div><p class="font-bold text-slate-800 text-lg">ขอเบิก: ${type} (ไซส์ ${size})</p><p class="text-xs text-slate-500 mt-1">ผู้ขอเบิก: <span class="font-semibold text-slate-700">${name}</span> (${dept}) &middot; ${historyButton}</p><p class="text-xs text-slate-600 mt-2 bg-white p-2 rounded-lg border border-slate-100"><span class="font-bold">เหตุผล:</span> ${reason}</p></div><div class="text-xs font-semibold text-slate-400 whitespace-nowrap bg-white px-2 py-1 rounded-lg border">${new Date(time).toLocaleString()}</div></div><div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-slate-200"><div class="md:col-span-2"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">เลือกประเภทสต็อก</label><div class="flex flex-col space-y-1 bg-white p-2 rounded-lg border border-slate-200"><label class="inline-flex items-center text-xs font-medium text-slate-700"><input type="radio" name="approve-stock-type-${id}" value="New" checked class="form-radio h-3 w-3 text-indigo-600"><span class="ml-2">ของใหม่ (เหลือ ${newStockQty})</span></label><label class="inline-flex items-center text-xs font-medium text-slate-700"><input type="radio" name="approve-stock-type-${id}" value="Used" class="form-radio h-3 w-3 text-blue-600"><span class="ml-2">มือสอง (เหลือ ${usedStockQty})</span></label></div></div><div class="md:col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">จำนวนอนุมัติ</label><input type="number" value="${qty}" min="1" max="${qty}" class="approval-quantity-input w-full py-2 px-3 border border-slate-200 rounded-lg text-sm font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none"></div><div class="md:col-span-2"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">หมายเหตุให้ผู้เบิก</label><input type="text" placeholder="เช่น สต็อกไม่พอ..." class="approval-reason-input w-full py-2 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div></div><div class="flex justify-end items-center gap-3 mt-4 pt-2"><button data-id="${id}" class="reject-btn bg-rose-50 hover:bg-rose-100 text-red-600 text-xs font-bold py-2 px-4 rounded-lg transition-colors">ปฏิเสธ</button><button data-id="${id}" class="approve-btn bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md shadow-emerald-200 transition-all">อนุมัติคำขอ</button></div>`;
+            
+            // 🔒 ฝังข้อมูลยอดสต็อกปัจจุบันเข้าไปใน Card เพื่อใช้เช็คตอนกดอนุมัติ
+            card.dataset.newStock = newStockQty;
+            card.dataset.usedStock = usedStockQty;
+            
+            content = `<div class="flex justify-between items-start"><div><p class="font-bold text-slate-800 text-lg">ขอเบิก: ${type} (ไซส์ ${size})</p><p class="text-xs text-slate-500 mt-1">ผู้ขอเบิก: <span class="font-semibold text-slate-700">${name}</span> (${dept}) &middot; ${historyButton}</p><p class="text-xs text-slate-600 mt-2 bg-white p-2 rounded-lg border border-slate-100"><span class="font-bold">เหตุผล:</span> ${reason}</p></div><div class="text-xs font-semibold text-slate-400 whitespace-nowrap bg-white px-2 py-1 rounded-lg border">${new Date(time).toLocaleString()}</div></div><div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-slate-200"><div class="md:col-span-2"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">เลือกประเภทสต็อกที่จะตัด</label><div class="flex flex-col space-y-1 bg-white p-2 rounded-lg border border-slate-200"><label class="inline-flex items-center text-xs font-medium text-slate-700"><input type="radio" name="approve-stock-type-${id}" value="New" checked class="form-radio h-3 w-3 text-indigo-600"><span class="ml-2">ของใหม่ (เหลือ ${newStockQty})</span></label><label class="inline-flex items-center text-xs font-medium text-slate-700"><input type="radio" name="approve-stock-type-${id}" value="Used" class="form-radio h-3 w-3 text-blue-600"><span class="ml-2">มือสอง (เหลือ ${usedStockQty})</span></label></div></div><div class="md:col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">จำนวนอนุมัติ</label><input type="number" value="${qty}" min="1" max="${qty}" class="approval-quantity-input w-full py-2 px-3 border border-slate-200 rounded-lg text-sm font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none"></div><div class="md:col-span-2"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">หมายเหตุให้ผู้เบิก</label><input type="text" placeholder="เช่น สต็อกไม่พอ..." class="approval-reason-input w-full py-2 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div></div><div class="flex justify-end items-center gap-3 mt-4 pt-2"><button data-id="${id}" class="reject-btn bg-rose-50 hover:bg-rose-100 text-red-600 text-xs font-bold py-2 px-4 rounded-lg transition-colors">ปฏิเสธ</button><button data-id="${id}" class="approve-btn bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md shadow-emerald-200 transition-all">อนุมัติคำขอ</button></div>`;
         }
         card.innerHTML = content; list.appendChild(card);
     });
