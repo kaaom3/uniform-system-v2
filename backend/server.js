@@ -10,7 +10,7 @@ const Stock = require('./models/Stock');
 const Request = require('./models/Request');
 const Log = require('./models/Log');
 const StockTransaction = require('./models/StockTransaction');
-const { sendPushMessage } = require('./utils/lineNotify'); // 👈 เพิ่มการดึงไฟล์ LINE ตรงนี้
+const { sendPushMessage } = require('./lineNotify'); // 👈 เพิ่มการดึงไฟล์ LINE ตรงนี้
 
 const app = express();
 app.use(cors());
