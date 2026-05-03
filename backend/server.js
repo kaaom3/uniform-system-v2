@@ -48,7 +48,7 @@ const logAdminAction = async (adminName, action, details) => {
 // ==========================================
 // 🤖 LINE WEBHOOK (ระบบตอบโต้อัตโนมัติ)
 // ==========================================
-const LINE_TOKEN = "Atb5cyLGBu82fm3ZXPdnZ3nNsoL5+KnpeVqv1expkFCsXb9bWX8LWrwc0keDtpjFJxYTkGp3+eyHLZM0GfK/lIhEjMzB97yVy4+M9oCYkuZEtBVBGU/GHMd3n9w09urwKcorN9VjfY2Px6sbTfvidAdB04t89/1O/w1cDnyilFU=";
+const LINE_TOKEN = "dCnA72Q1lQkAo6W2wY4q/3JLZiUJ0UqF3r/5H/kYLVylWAaab2u3FRxeNmJN536psAEbkV56INlKAoCMSfD9wF0CTxZ7x/WAgUKVv0warZ5lbiA1BTIdtwG26FuNFudDcHun6BslptbMbk6xpk5QdQdB04t89/1O/w1cDnyilFU=";
 
 async function replyLineMessage(replyToken, text) {
     try {
