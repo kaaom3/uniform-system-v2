@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบเบิก-คืนชุดยูนิฟอร์ม</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-pending { background-color: #fef9c3; color: #a16207; }
+        .status-approved { background-color: #dcfce7; color: #166534; }
+        .status-rejected { background-color: #fee2e2; color: #991b1b; }
+        .status-returned { background-color: #e0e7ff; color: #3730a3; }
+        .status-pending-return { background-color: #feefc3; color: #a16207; border: 1px solid #fcd34d; }
+        .modal-overlay { transition: opacity 0.3s ease; }
+        .modal-container { transition: transform 0.3s ease; }
+        .update-indicator { display: inline-block; width: 8px; height: 8px; margin-left: 6px; background-color: #f97316; border-radius: 50%; animation: pulse-orange 1.5s infinite; }
+        @keyframes pulse-orange { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .user-status-active { background-color: #dcfce7; color: #166534; }
+        .user-status-inactive { background-color: #fee2e2; color: #991b1b; }
+        .form-collapsible-content { 
+            transition: max-height 0.5s ease-in-out, padding-top 0.5s ease-in-out, padding-bottom 0.5s ease-in-out, opacity 0.3s ease-in-out; 
+            overflow: hidden; 
+            max-height: 0;
+            opacity: 0;
+        }
+        .form-collapsible-content.expanded {
+             opacity: 1;
+        }
+        
+        /* สไตล์สำหรับ Admin Sidebar */
+        .admin-tab.text-indigo-600 {
+            background-color: #e0e7ff; /* bg-indigo-50 */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            border-color: #6366f1; /* border-indigo-500 */
+        }
+        .admin-tab.text-gray-500:hover {
+            background-color: #f3f4f6; /* hover:bg-gray-100 */
+        }
+
+        /* ยกเครื่องสไตล์ตารางที่ถูกสร้างโดย JavaScript (ตารางสต๊อกและผู้ใช้) */
+        #stock-summary-container table, #users-list-table table, #all-requests-view table, #admin-log-view table { 
+            width: 100%; border-collapse: separate; border-spacing: 0; 
+            border: 1px solid #e5e7eb; border-radius: 0.75rem; overflow: hidden; 
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+        }
+        #stock-summary-container th, #users-list-table th, #all-requests-view th, #admin-log-view th { 
+            background-color: #f8fafc; padding: 0.875rem 1rem; text-transform: uppercase; 
+            font-size: 0.75rem; font-weight: 700; color: #475569; letter-spacing: 0.05em; 
+            border-bottom: 1px solid #e5e7eb; 
+        }
+        #stock-summary-container td, #users-list-table td, #all-requests-view td, #admin-log-view td { 
+            padding: 1rem; vertical-align: middle; border-bottom: 1px solid #f1f5f9; 
+            font-size: 0.875rem; color: #334155; 
+        }
+        #stock-summary-container tr:last-child td, #users-list-table tr:last-child td, #all-requests-view tr:last-child td, #admin-log-view tr:last-child td { border-bottom: none; }
+        #stock-summary-container tr:hover, #users-list-table tr:hover, #all-requests-view tr:hover, #admin-log-view tr:hover { background-color: #f8fafc; }
+        #stock-summary-container img { border-radius: 0.5rem; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); border: 1px solid #e2e8f0;}
+        
+        /* สไตล์ Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+    <div id="app" class="max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <div id="notification" class="hidden fixed top-5 right-5 text-white py-3 px-6 rounded-xl shadow-lg z-50 transition-all font-medium border border-white/20 backdrop-blur-sm">
+            <p id="notification-message"></p>
+        </div>
+
+        <!-- Login View -->
+        <div id="login-view" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden mt-20 border border-slate-100">
+             <div class="p-8">
+                <img src="https://img2.pic.in.th/pic/logo-resize.webp" alt="Logo" class="w-48 mx-auto mb-6">
+                <h2 class="text-2xl font-extrabold text-center text-slate-800 tracking-tight">ระบบเบิก-คืนชุดยูนิฟอร์ม</h2>
+                <div class="mt-8">
+                    <label class="block text-sm font-semibold text-slate-600 mb-2">ชื่อผู้ใช้</label>
+                    <input type="text" id="username" placeholder="รหัสพนักงาน" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all">
+                </div>
+                <div class="mt-5">
+                    <label class="block text-sm font-semibold text-slate-600 mb-2">รหัสผ่าน</label>
+                    <input type="password" id="password" placeholder="วันเดือนปีเกิด (01011999)" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all">
+                </div>
+                <div class="mt-8">
+                    <button id="login-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-indigo-200 transition-all duration-300">เข้าสู่ระบบ</button>
+                </div>
+                <p id="login-error" class="text-red-500 text-sm mt-4 text-center h-5 font-medium"></p>
+                <div class="mt-4 text-center">
+                    <a href="#" id="show-forgot-password-options" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium hover:underline">ลืมรหัสผ่าน?</a>
+                </div>
+                <div id="forgot-password-options-container" class="hidden mt-6 pt-6 border-t border-slate-100 text-center">
+                    <p class="text-sm font-semibold text-slate-700 mb-3">เลือกช่องทางการรีเซ็ตรหัสผ่าน:</p>
+                    <div class="flex flex-col items-center gap-4">
+                        <div class="text-center bg-green-50 p-4 rounded-xl border border-green-100 w-full">
+                            <p class="text-xs font-bold text-green-700 mb-2">ผ่าน LINE Bot (แนะนำ)</p>
+                            <img id="line-qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://line.me/R/ti/p/@591ukmsm" alt="LINE QR Code" class="w-28 h-28 mx-auto rounded-lg shadow-sm">
+                            <p class="text-[11px] text-green-600 mt-2">สแกน QR Code เพื่อแอดเพื่อน<br>และทำตามขั้นตอนใน LINE</p>
+                        </div>
+                        <a href="#" id="forgot-password-link" class="text-sm text-indigo-600 hover:underline font-medium">ดำเนินการผ่านหน้าเว็บแทน</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Forgot Password View -->
+        <div id="forgot-password-view" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden mt-20 border border-slate-100">
+            <div class="p-8">
+                <h2 class="text-2xl font-extrabold text-center text-slate-800 mb-2">รีเซ็ตรหัสผ่าน</h2>
+                
+                <div id="forgot-password-stage-1">
+                    <p class="text-center text-sm text-slate-500 mt-2 mb-6">กรอก Username ของคุณเพื่อตรวจสอบสถานะ หรือส่งคำขอรีเซ็ตรหัสผ่าน</p>
+                    <div class="mt-6">
+                        <label for="forgot-username" class="block text-sm font-semibold text-slate-700 mb-2">Username (รหัสพนักงาน)</label>
+                        <input type="text" id="forgot-username" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all">
+                    </div>
+                    <div class="mt-6">
+                        <button id="check-reset-status-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-indigo-200 transition-all duration-300">ตรวจสอบ / ส่งคำขอ</button>
+                    </div>
+                </div>
+
+                <div id="forgot-password-stage-2" class="hidden">
+                    <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                        <p class="text-center text-sm text-green-700 font-medium">คำขอของคุณได้รับการอนุมัติแล้ว กรุณาตั้งรหัสผ่านใหม่</p>
+                    </div>
+                    <div class="mt-4 space-y-4">
+                        <div>
+                            <label for="reset-new-password" class="block text-sm font-semibold text-slate-700 mb-2">รหัสผ่านใหม่</label>
+                            <input type="password" id="reset-new-password" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                        </div>
+                         <div>
+                            <label for="reset-confirm-password" class="block text-sm font-semibold text-slate-700 mb-2">ยืนยันรหัสผ่านใหม่</label>
+                            <input type="password" id="reset-confirm-password" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                        </div>
+                    </div>
+                    <div class="mt-8">
+                        <button id="submit-new-password-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-green-200 transition-all duration-300">ยืนยันรหัสผ่านใหม่</button>
+                    </div>
+                </div>
+                
+                <p id="forgot-password-error" class="text-red-500 text-sm mt-4 text-center h-5 font-medium"></p>
+                 <div class="mt-4 text-center">
+                    <button id="back-to-login-link" class="text-sm text-slate-500 hover:text-slate-800 font-medium flex items-center justify-center mx-auto gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg> 
+                        กลับไปหน้าล็อกอิน
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main View -->
+        <div id="main-view" class="hidden">
+            <header class="flex justify-between items-center mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex items-center space-x-5">
+                    <div class="p-2 bg-indigo-50 rounded-xl">
+                        <img src="https://img2.pic.in.th/pic/logo-resize.webp" alt="Logo" class="h-10 object-contain">
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">ยินดีต้อนรับ, <span id="user-name" class="text-indigo-600"></span></h1>
+                        <p class="text-sm font-medium text-slate-500 mt-0.5">แผนก: <span id="user-department" class="text-slate-700"></span></p>
+                    </div>
+                </div>
+                <button id="logout-btn" class="bg-rose-50 text-red-600 hover:bg-red-600 hover:text-white font-bold py-2.5 px-5 rounded-xl transition duration-300 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    <span>ออกจากระบบ</span>
+                </button>
+            </header>
+
+            <!-- ============================================== -->
+            <!-- ADMIN DASHBOARD (New Sidebar Layout) -->
+            <!-- ============================================== -->
+            <div id="admin-dashboard-panel" class="hidden mb-8 bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden flex flex-col md:flex-row min-h-[700px]">
+                
+                <!-- Sidebar Menu -->
+                <div class="w-full md:w-64 bg-slate-50 border-r border-slate-200 flex-shrink-0 flex flex-col">
+                    <div class="p-6">
+                        <h2 class="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 px-2">โหมดผู้ดูแลระบบ</h2>
+                        <nav class="flex flex-col space-y-1.5" aria-label="Tabs">
+                            <button id="tab-approvals" class="admin-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 border-indigo-500 text-indigo-600 font-bold text-sm transition-all bg-indigo-50">
+                                <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                                รายการรออนุมัติ
+                            </button>
+                            <button id="tab-password-resets" class="admin-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all">
+                                <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                                รีเซ็ตรหัสผ่าน
+                            </button>
+                            <button id="tab-stock" class="admin-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all">
+                                <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                                จัดการสต็อก
+                                <span id="stock-alert-badge" class="hidden ml-auto px-2 py-0.5 text-[10px] font-black text-white bg-red-500 rounded-full animate-pulse shadow-sm">!</span>
+                            </button>
+                            <button id="tab-users" class="admin-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all">
+                                <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                จัดการผู้ใช้
+                            </button>
+                            <button id="tab-history" class="admin-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all">
+                                <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                ประวัติทั้งหมด
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Main Content Area for Admin -->
+                <div class="flex-1 p-6 md:p-8 bg-white relative overflow-y-auto">
+                    
+                    <!-- TAB 1: อนุมัติ -->
+                    <div id="content-approvals" class="admin-tab-content">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-2xl font-bold text-slate-800">รายการที่ต้องดำเนินการ</h3>
+                            <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">ACTION REQUIRED</span>
+                        </div>
+                        <div id="pending-approvals-list" class="space-y-4"></div>
+                    </div>
+                    
+                    <!-- TAB 2: รีเซ็ตรหัสผ่าน -->
+                    <div id="content-password-resets" class="admin-tab-content hidden">
+                        <h3 class="text-2xl font-bold text-slate-800 mb-6">คำขอรีเซ็ตรหัสผ่านที่รออนุมัติ</h3>
+                        <div id="pending-password-resets-list" class="space-y-4"></div>
+                    </div>
+                    
+                    <!-- TAB 3: จัดการสต๊อก (Revamped) -->
+                    <div id="content-stock" class="admin-tab-content hidden">
+                        <!-- Widget: ฟอร์มเพิ่ม/แก้ไขสต็อก -->
+                        <div class="bg-gradient-to-br from-indigo-50/50 to-white rounded-2xl border border-indigo-100 shadow-sm mb-8">
+                            <div id="toggle-stock-form-btn" class="p-5 flex justify-between items-center cursor-pointer rounded-2xl hover:bg-indigo-50/50 transition-colors">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-indigo-100 p-2 rounded-lg text-indigo-600">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                    </div>
+                                    <h3 class="text-lg font-bold text-slate-800">เพิ่ม / แก้ไขสต็อกสินค้า</h3>
+                                </div>
+                                <svg id="stock-form-toggle-icon" class="w-5 h-5 text-slate-400 transition-transform duration-300 transform -rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                            <div id="stock-form-content" class="form-collapsible-content">
+                                <div class="px-6 pb-6 pt-2">
+                                    <form id="stock-management-form" class="grid grid-cols-1 md:grid-cols-12 gap-5">
+                                        <!-- ส่วนรูปภาพ (ซ้าย) -->
+                                        <div class="md:col-span-4 flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-200 rounded-xl bg-white">
+                                            <img id="stock-image-preview" src="https://placehold.co/200x200/f8fafc/94a3b8?text=Image" class="w-32 h-32 object-cover rounded-xl shadow-sm mb-4">
+                                            <label for="stock-image-upload" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-semibold py-2 px-4 rounded-lg cursor-pointer transition-colors shadow-sm w-full text-center">
+                                                <span>อัปโหลดรูปภาพ</span>
+                                                <input id="stock-image-upload" name="stock-image-upload" type="file" class="sr-only" accept="image/png, image/jpeg">
+                                            </label>
+                                            <input type="hidden" id="stock-image-url">
+                                        </div>
+                                        
+                                        <!-- ส่วนข้อมูล (ขวา) -->
+                                        <div class="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div class="sm:col-span-2">
+                                                <label for="stock-category" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">หมวดหมู่หลัก</label>
+                                                <input type="text" id="stock-category" placeholder="เช่น เสื้อ, กางเกง, อุปกรณ์" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow">
+                                            </div>
+                                            <div>
+                                                <label for="stock-type" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">ประเภท</label>
+                                                <input type="text" id="stock-type" placeholder="เช่น เสื้อโปโลชาย" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            </div>
+                                            <div>
+                                                <label for="stock-size" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">ขนาด (Size)</label>
+                                                <input type="text" id="stock-size" placeholder="เช่น S, M, L, XL" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            </div>
+                                            
+                                            <!-- จำนวนสต็อก แบ่งโซนชัดเจน -->
+                                            <div class="sm:col-span-2 grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
+                                                <div>
+                                                    <label for="stock-new-qty" class="block text-xs font-bold text-green-600 mb-1 text-center">ของใหม่</label>
+                                                    <input type="number" id="stock-new-qty" value="0" min="0" class="w-full py-2 text-center font-bold text-lg bg-white border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500">
+                                                </div>
+                                                <div>
+                                                    <label for="stock-used-qty" class="block text-xs font-bold text-blue-600 mb-1 text-center">มือสอง</label>
+                                                    <input type="number" id="stock-used-qty" value="0" min="0" class="w-full py-2 text-center font-bold text-lg bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                                </div>
+                                                <div>
+                                                    <label for="stock-damaged-qty" class="block text-xs font-bold text-red-600 mb-1 text-center">ชำรุด</label>
+                                                    <input type="number" id="stock-damaged-qty" value="0" min="0" class="w-full py-2 text-center font-bold text-lg bg-white border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500">
+                                                </div>
+                                            </div>
+
+                                            <div class="sm:col-span-2">
+                                                <label for="stock-threshold-qty" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">แจ้งเตือนเมื่อสต็อกต่ำกว่า (ชิ้น)</label>
+                                                <input type="number" id="stock-threshold-qty" value="5" min="0" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500">
+                                            </div>
+                                        </div>
+
+                                        <div class="md:col-span-12 flex justify-end gap-3 pt-4 border-t border-slate-100 mt-2">
+                                            <button type="button" id="clear-stock-form-btn" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-6 rounded-lg transition-colors">ล้างฟอร์ม</button>
+                                            <button type="button" id="update-stock-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-8 rounded-lg shadow-md shadow-indigo-200 transition-all">บันทึกข้อมูล</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ตารางสต็อกสินค้า -->
+                        <div>
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                                <h3 class="text-xl font-bold text-slate-800">รายการสต็อกทั้งหมด</h3>
+                                <div class="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                                    <button id="stock-filter-all" class="stock-filter-btn bg-white text-indigo-700 text-xs font-bold py-1.5 px-4 rounded-md shadow-sm transition-all">ทั้งหมด</button>
+                                    <button id="stock-filter-low" class="stock-filter-btn text-slate-600 hover:text-slate-800 text-xs font-bold py-1.5 px-4 rounded-md transition-all">ของใหม่ใกล้หมด</button>
+                                </div>
+                            </div>
+                            
+                            <div id="low-stock-alert-banner" class="hidden mb-5 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+                                <svg class="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                <div>
+                                    <p class="font-bold text-red-800 text-sm">แจ้งเตือน: สต็อกพัสดุใกล้หมด (ต่ำกว่าเกณฑ์)</p>
+                                    <ul id="low-stock-alert-list" class="mt-1 list-disc list-inside text-xs text-red-600 font-medium"></ul>
+                                </div>
+                            </div>
+
+                            <div id="stock-summary-container" class="space-y-6"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- TAB 4: จัดการผู้ใช้ -->
+                    <div id="content-users" class="admin-tab-content hidden">
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl mb-8">
+                            <div id="toggle-user-form-btn" class="p-5 flex justify-between items-center cursor-pointer rounded-2xl hover:bg-slate-100 transition-colors">
+                                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                                    เพิ่ม / แก้ไขผู้ใช้งาน
+                                </h3>
+                                <svg id="user-form-toggle-icon" class="w-5 h-5 text-slate-400 transition-transform duration-300 transform -rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                            <div id="user-form-content" class="form-collapsible-content">
+                                <div class="p-6 border-t border-slate-200 bg-white rounded-b-2xl">
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        <form id="user-management-form" class="space-y-4">
+                                            <div><label for="user-form-name" class="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อ-สกุล</label><input type="text" id="user-form-name" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                            <div><label for="user-form-department" class="block text-xs font-bold text-slate-500 uppercase mb-1">แผนก</label><input type="text" id="user-form-department" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div><label for="user-form-username" class="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label><input type="text" id="user-form-username" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                                <div><label for="user-form-password" class="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label><input type="text" id="user-form-password" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                            </div>
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div><label for="user-form-role" class="block text-xs font-bold text-slate-500 uppercase mb-1">สิทธิ์ (Role)</label><select id="user-form-role" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"><option value="user">User</option><option value="admin">Admin</option></select></div>
+                                                <div><label for="user-form-status" class="block text-xs font-bold text-slate-500 uppercase mb-1">สถานะ</label><select id="user-form-status" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"><option value="active">เปิดใช้งาน (Active)</option><option value="inactive">ปิดใช้งาน (Inactive)</option></select></div>
+                                            </div>
+                                            <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-2">
+                                                <button type="button" id="clear-user-form-btn" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-6 rounded-lg transition-colors">ล้างฟอร์ม</button>
+                                                <button type="button" id="save-user-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-8 rounded-lg shadow-md transition-all">บันทึก</button>
+                                            </div>
+                                        </form>
+                                        <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 h-fit">
+                                            <h4 class="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>นำเข้าข้อมูลผู้ใช้ (CSV)</h4>
+                                            <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">เลือกไฟล์ CSV ที่มี Header: <br><code class="bg-white text-indigo-600 px-1 py-0.5 rounded border">Username, Password, Name, Department, Role, Status</code></p>
+                                            <div class="flex flex-col gap-3">
+                                              <input type="file" id="csv-file-input" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"/>
+                                              <button id="import-users-btn" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-lg text-sm shadow-sm transition-all">นำเข้าข้อมูล (Import)</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                                <h3 class="text-xl font-bold text-slate-800">รายชื่อผู้ใช้งานทั้งหมด</h3>
+                                <div class="w-full sm:w-72">
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                        </div>
+                                        <input type="text" id="user-search-input" placeholder="ค้นหาชื่อ, แผนก, Username..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow bg-white">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="users-list-table" class="overflow-x-auto"></div>
+                            <div id="users-pagination" class="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+                                <button id="prev-user-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all">ก่อนหน้า</button>
+                                <span id="user-page-info" class="text-xs font-medium text-slate-500"></span>
+                                <button id="next-user-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all">ถัดไป</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- TAB 5: ประวัติทั้งหมด -->
+                    <div id="content-history" class="admin-tab-content hidden">
+                         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-100 pb-4">
+                            <div class="flex items-center space-x-3 w-full sm:w-auto">
+                                <h3 class="text-2xl font-bold text-slate-800">ประวัติระบบ</h3>
+                                <select id="history-view-selector" class="py-1.5 px-3 bg-slate-50 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-slate-700">
+                                    <option value="requests">ประวัติการเบิก-คืนทั้งหมด</option>
+                                    <option value="log-approval">ประวัติการกระทำของ Admin</option>
+                                </select>
+                            </div>
+                            <button id="export-history-btn" class="bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-600 text-sm shadow-sm shadow-emerald-200 transition-all flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                Export CSV
+                            </button>
+                         </div>
+                         
+                         <!-- View: All Requests -->
+                         <div id="all-requests-view">
+                            <div class="mb-4 relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <input type="text" id="admin-history-search" placeholder="ค้นหาจากชื่อ, ประเภท, ขนาด, สถานะ..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow">
+                            </div>
+                            <div class="overflow-x-auto"><table class="min-w-full"><thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left">เวลา</th><th class="px-4 py-3 text-left">ผู้เบิก</th><th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-left">สถานะ</th><th class="px-4 py-3 text-left">หมายเหตุ</th></tr></thead><tbody id="all-requests-table" class="bg-white"></tbody></table></div>
+                            <div id="admin-history-pagination" class="mt-4 flex items-center justify-between border-t border-slate-100 pt-4"><button id="prev-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">ก่อนหน้า</button><span id="page-info" class="text-xs font-medium text-slate-500"></span><button id="next-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">ถัดไป</button></div>
+                         </div>
+
+                         <!-- View: Admin Logs -->
+                         <div id="admin-log-view" class="hidden">
+                            <div class="mb-4 relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <input type="text" id="admin-log-search" placeholder="ค้นหาการกระทำ, Admin..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow">
+                            </div>
+                            <div class="overflow-x-auto"><table class="min-w-full"><thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left">เวลา</th><th class="px-4 py-3 text-left">Admin</th><th class="px-4 py-3 text-left">การกระทำ</th><th class="px-4 py-3 text-left">รายละเอียด</th></tr></thead><tbody id="admin-log-table" class="bg-white"></tbody></table></div>
+                            <div id="admin-log-pagination" class="mt-4 flex items-center justify-between border-t border-slate-100 pt-4"><button id="prev-log-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">ก่อนหน้า</button><span id="log-page-info" class="text-xs font-medium text-slate-500"></span><button id="next-log-page-btn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">ถัดไป</button></div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- USER ACTIONS AREA (Grid Layout) -->
+            <!-- ============================================== -->
+            <div class="mt-4 pt-4 border-t-2 border-dashed border-slate-200">
+                <h2 class="text-xl font-extrabold text-slate-800 mb-6 px-2 opacity-80 flex items-center gap-2">
+                    <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                    พื้นที่ส่วนตัว (User Area)
+                </h2>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Left Column: Create Request -->
+                    <div class="lg:col-span-1 space-y-6">
+                         <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 class="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                สร้างรายการเบิก/คืน
+                            </h3>
+                            <div class="space-y-4">
+                                <div id="item-image-preview-container" class="hidden mb-4 p-4 border border-slate-100 rounded-xl bg-slate-50 flex justify-center">
+                                    <img id="item-image-preview" src="" alt="Item image preview" class="max-w-full h-32 object-contain rounded-lg shadow-sm bg-white">
+                                </div>
+                                <div>
+                                    <label for="request-reason-type" class="block text-xs font-bold text-slate-500 uppercase mb-1">ประเภทคำขอ</label>
+                                    <select id="request-reason-type" class="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium">
+                                        <option value="New Employee">ขอเบิกพัสดุ (สำหรับใช้งาน)</option>
+                                        <option value="Damaged/Lost">ขอส่งคืน (ชำรุด/สูญหาย)</option>
+                                    </select>
+                                </div>
+                                
+                                <div id="new-request-form">
+                                    <form id="request-form" class="space-y-4 border-t border-slate-100 pt-4">
+                                        <div>
+                                            <label for="request-type" class="block text-xs font-bold text-slate-500 uppercase mb-1">ประเภทพัสดุ</label>
+                                            <select id="request-type" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></select>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label for="request-size" class="block text-xs font-bold text-slate-500 uppercase mb-1">ขนาด</label>
+                                                <select id="request-size" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></select>
+                                            </div>
+                                            <div>
+                                                <label for="request-quantity" class="block text-xs font-bold text-slate-500 uppercase mb-1">จำนวน</label>
+                                                <input type="number" id="request-quantity" value="1" min="1" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-center font-bold">
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label for="request-details" class="block text-xs font-bold text-slate-500 uppercase mb-1">เหตุผล/รายละเอียดเพิ่มเติม</label>
+                                            <textarea id="request-details" rows="2" class="w-full py-2 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <div id="return-request-form" class="hidden">
+                                     <form id="return-form" class="space-y-4 border-t border-slate-100 pt-4">
+                                         <div>
+                                            <label for="return-item-select" class="block text-xs font-bold text-slate-500 uppercase mb-1">เลือกรายการที่ต้องการคืน</label>
+                                            <select id="return-item-select" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"></select>
+                                         </div>
+                                         <div id="return-quantity-wrapper" class="hidden">
+                                            <label for="return-quantity" class="block text-xs font-bold text-slate-500 uppercase mb-1">จำนวนที่ต้องการคืน</label>
+                                            <input type="number" id="return-quantity" value="1" min="1" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-center font-bold">
+                                         </div>
+                                         <div>
+                                            <label for="return-details" class="block text-xs font-bold text-slate-500 uppercase mb-1">รายละเอียดการชำรุด</label>
+                                            <textarea id="return-details" rows="2" class="w-full py-2 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                                         </div>
+                                     </form>
+                                </div>
+                                
+                                <button id="request-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-indigo-200 transition-all mt-6 text-sm">ส่งคำขอเบิก</button>
+                            </div>
+                        </div>
+                        
+                        <div id="my-holdings-panel" class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                             <div id="my-history-header" class="flex justify-between items-center cursor-pointer hover:opacity-80 transition-opacity">
+                                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                                    พัสดุที่ฉันถือครองอยู่
+                                </h3>
+                                <svg id="my-history-toggle-icon" class="w-5 h-5 text-slate-400 transition-transform duration-300 transform -rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                            <div id="my-history-content" class="form-collapsible-content mt-4">
+                                <div id="my-holdings-list" class="space-y-2 pt-2 border-t border-slate-100"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: My History -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 h-full">
+                            <div id="my-requests-header" class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                                    ประวัติการเบิก-คืนของฉัน
+                                </h3>
+                            </div>
+                            <div id="my-requests-content" class="overflow-x-auto border-t border-slate-100 pt-4">
+                                <table class="min-w-full divide-y divide-slate-200 mt-2">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider rounded-l-lg">เวลา</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">รายการ</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">สถานะ</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">หมายเหตุ</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider rounded-r-lg">การดำเนินการ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="my-requests-table" class="bg-white divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Modals Section (เหมือนเดิมแต่ปรับ CSS ขอบมน) -->
+        <div id="user-history-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-50 modal-overlay opacity-0">
+            <div class="relative top-20 mx-auto p-6 border border-slate-100 w-full max-w-lg shadow-2xl rounded-2xl bg-white modal-container scale-95">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <h3 class="text-xl font-bold text-slate-800">ประวัติของ <span id="history-modal-username" class="text-indigo-600"></span></h3>
+                    <button id="history-modal-close-btn" class="text-slate-400 hover:text-slate-700 bg-slate-50 p-2 rounded-lg transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div id="history-modal-content" class="mt-4"></div>
+            </div>
+        </div>
+
+        <div id="confirm-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-50 modal-overlay opacity-0 flex items-center justify-center">
+            <div class="relative mx-auto p-6 border border-slate-100 w-full max-w-sm shadow-2xl rounded-2xl bg-white modal-container scale-95 text-center">
+                <div class="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-amber-50 mb-4 border border-amber-100">
+                    <svg class="h-7 w-7 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <h3 class="text-xl font-bold text-slate-800">ยืนยันการกระทำ</h3>
+                <p id="confirm-modal-message" class="text-sm text-slate-500 mt-2 mb-6 px-4"></p>
+                <div class="flex justify-center gap-3">
+                    <button id="confirm-modal-cancel-btn" class="px-5 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors w-full">ยกเลิก</button>
+                    <button id="confirm-modal-ok-btn" class="px-5 py-2.5 bg-red-500 text-white font-bold rounded-xl shadow-md shadow-red-200 hover:bg-red-600 transition-all w-full">ยืนยัน</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="prompt-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-[51] modal-overlay opacity-0 flex items-center justify-center">
+            <div class="relative mx-auto p-6 border border-slate-100 w-full max-w-md shadow-2xl rounded-2xl bg-white modal-container scale-95">
+                <h3 id="prompt-modal-title" class="text-xl font-bold text-slate-800 text-center mb-4"></h3>
+                <textarea id="prompt-modal-input" rows="3" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-shadow" placeholder="กรุณากรอกข้อมูล..."></textarea>
+                <div class="flex justify-center gap-3 mt-6">
+                    <button id="prompt-modal-cancel-btn" class="px-5 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors w-full">ยกเลิก</button>
+                    <button id="prompt-modal-submit-btn" class="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl shadow-md shadow-indigo-200 hover:bg-indigo-700 transition-all w-full">ตกลง</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="force-change-password-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-[99] modal-overlay opacity-0 flex items-center justify-center">
+            <div class="relative mx-auto p-8 border border-slate-100 w-full max-w-sm shadow-2xl rounded-2xl bg-white modal-container scale-95 text-center">
+                <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-indigo-50 mb-4 border border-indigo-100">
+                     <svg class="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                </div>
+                <h3 class="text-xl font-extrabold text-slate-800">เปลี่ยนรหัสผ่านครั้งแรก</h3>
+                <p class="text-xs text-slate-500 mt-2 mb-6">เพื่อความปลอดภัยของบัญชี กรุณาตั้งรหัสผ่านใหม่ก่อนเข้าใช้งานระบบ</p>
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label for="new-password" class="block text-xs font-bold text-slate-600 uppercase mb-1">รหัสผ่านใหม่</label>
+                        <input type="password" id="new-password" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow">
+                    </div>
+                     <div>
+                        <label for="confirm-password" class="block text-xs font-bold text-slate-600 uppercase mb-1">ยืนยันรหัสผ่านใหม่</label>
+                        <input type="password" id="confirm-password" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow">
+                    </div>
+                </div>
+                <p id="password-change-error" class="text-red-500 text-xs mt-3 h-4 font-medium"></p>
+                <button id="force-change-password-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-indigo-200 transition-all mt-6">ยืนยันและเข้าสู่ระบบ</button>
+            </div>
+        </div>
+
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
