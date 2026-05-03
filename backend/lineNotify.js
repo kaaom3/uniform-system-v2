@@ -1,12 +1,12 @@
 // === การตั้งค่า: LINE Messaging API ===
 // 1. Channel Access Token (long-lived)
-const CHANNEL_ACCESS_TOKEN = "69ZFTFWwfiK7hZQ/lMfA+5GyR7HAAA1XmntySY/YXigpjXV6vDsfyS5lM4dB/swrJxYTkGp3+eyHLZM0GfK/lIhEjMzB97yVy4+M9oCYkub7TgT5+xt1T6L25T0PQiQYeNDfJXR8/noB+ekYj0GdTgdB04t89/1O/w1cDnyilFU=";
+const CHANNEL_ACCESS_TOKEN = "Atb5cyLGBu82fm3ZXPdnZ3nNsoL5+KnpeVqv1expkFCsXb9bWX8LWrwc0keDtpjFJxYTkGp3+eyHLZM0GfK/lIhEjMzB97yVy4+M9oCYkuZEtBVBGU/GHMd3n9w09urwKcorN9VjfY2Px6sbTfvidAdB04t89/1O/w1cDnyilFU=";
 
 // 2. Group ID หรือ User ID ที่จะรับการแจ้งเตือน
 const TARGET_ID = "C3861e25e3cbe0ab282c2c43fa749e436";
 
 // URL ของระบบจัดการ (ใส่ลิงก์หน้าเว็บจริงของคุณเมื่อนำขึ้นโฮสต์)
-const SYSTEM_URL = "http://127.0.0.1:5500"; 
+const SYSTEM_URL = "https://uniform-system-hg0e.onrender.com"; 
 
 /**
  * Creates a Flex Message JSON object
