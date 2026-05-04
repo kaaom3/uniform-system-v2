@@ -189,7 +189,20 @@ app.get('/api/users', async (req, res) => {
 
 app.post('/api/users', async (req, res) => {
     try {
-        const { userData, adminUser } = req.body;
+        const { userData, adminUser, originalUsername } = req.body;
+        
+        // 💡 โหมดแก้ไข (ถ้ามีการส่ง originalUsername มาด้วย)
+        if (originalUsername) {
+            if (originalUsername !== userData.username) {
+                const duplicate = await User.findOne({ username: userData.username });
+                if (duplicate) return res.status(400).json({ error: 'Username นี้มีผู้ใช้งานแล้ว' });
+            }
+            await User.findOneAndUpdate({ username: originalUsername }, userData);
+            await logAdminAction(adminUser, 'User Management', `อัปเดตข้อมูลผู้ใช้: ${originalUsername} -> ${userData.username}`);
+            return res.json({ success: true });
+        }
+
+        // 💡 โหมดสร้างใหม่ / หรือไม่ได้ส่ง originalUsername
         const existing = await User.findOne({ username: userData.username });
         if (existing) {
             await User.findOneAndUpdate({ username: userData.username }, userData);
@@ -304,7 +317,32 @@ app.get('/api/stock', async (req, res) => {
 
 app.post('/api/stock', async (req, res) => {
     try {
-        const { itemType, size, adminUser, ...stockData } = req.body;
+        const { itemType, size, originalItemType, originalSize, adminUser, ...stockData } = req.body;
+        
+        // 💡 โหมดแก้ไข (ถ้ามีการส่ง originalItemType มาด้วย)
+        if (originalItemType && originalSize) {
+            if (itemType !== originalItemType || size !== originalSize) {
+                const duplicate = await Stock.findOne({ itemType, size });
+                if (duplicate) return res.status(400).json({ error: 'ชื่อพัสดุและไซส์นี้มีอยู่แล้วในระบบ' });
+                
+                // อัปเดตประวัติธุรกรรม (StockTransaction) ให้ชื่อ/ไซส์ตรงกัน
+                await StockTransaction.updateMany(
+                    { itemType: originalItemType, size: originalSize },
+                    { $set: { itemType: itemType, size: size } }
+                );
+                // อัปเดตคำขอเบิก (Request) ให้ชื่อ/ไซส์ตรงกัน
+                await Request.updateMany(
+                    { itemType: originalItemType, size: originalSize },
+                    { $set: { itemType: itemType, size: size } }
+                );
+            }
+            
+            await Stock.findOneAndUpdate({ itemType: originalItemType, size: originalSize }, { itemType, size, ...stockData });
+            await logAdminAction(adminUser, 'Stock Management', `แก้ไขข้อมูลพัสดุ: ${originalItemType}(${originalSize}) -> ${itemType}(${size})`);
+            return res.json({ success: true });
+        }
+
+        // 💡 โหมดสร้างใหม่
         const existing = await Stock.findOne({ itemType, size });
         if (existing) {
             await Stock.findOneAndUpdate({ itemType, size }, stockData);

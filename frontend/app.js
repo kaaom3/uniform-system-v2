@@ -259,7 +259,7 @@ document.addEventListener('click', async function(e) {
         const stockItem = masterStock.find(s => s.itemType === itemType && s.size === size);
         if(!stockItem) return showNotification('ไม่พบข้อมูลพัสดุ', 'error');
 
-        // 🛡️ เช็คว่ามี HTML Modal ในหน้าเว็บหรือไม่ (แก้ปัญหา Cannot set properties of null)
+        // 🛡️ เช็คว่ามี HTML Modal ในหน้าเว็บหรือไม่
         const targetIdInput = document.getElementById('adjust-target-id');
         if (!targetIdInput) {
             return showNotification('❌ ไม่พบหน้าต่างปรับปรุง! โปรดตรวจสอบว่าคุณได้เพิ่มโค้ด Modal ลงในไฟล์ index.html แล้ว', 'error');
@@ -285,11 +285,6 @@ document.addEventListener('click', async function(e) {
         // เปิด Modal
         const modal = document.getElementById('advanced-adjust-modal');
         if (modal) openModalAnimation(modal);
-    }
-
-    // ปิดหน้าต่างปรับปรุง
-    if (e.target.closest('#close-adjust-modal-btn')) {
-        closeModalAnimation(document.getElementById('advanced-adjust-modal'));
     }
 
     // กดปุ่มบันทึกการปรับปรุงใน Modal
@@ -814,8 +809,12 @@ function displayStockSummary(stockData) {
 
 async function handleCreateNewStockItem() {
     const btn = document.getElementById('update-stock-btn');
+    const form = document.getElementById('stock-management-form');
     const data = {
-        itemType: document.getElementById('stock-type').value.trim(), size: document.getElementById('stock-size').value.trim(),
+        itemType: document.getElementById('stock-type').value.trim(), 
+        size: document.getElementById('stock-size').value.trim(),
+        originalItemType: form.dataset.originalType, // ส่งชื่อเดิมไปบอกหลังบ้าน
+        originalSize: form.dataset.originalSize,     // ส่งไซส์เดิมไปบอกหลังบ้าน
         category: document.getElementById('stock-category').value.trim(), newStock: parseInt(document.getElementById('stock-new-qty').value) || 0,
         usedStock: parseInt(document.getElementById('stock-used-qty').value) || 0, damagedStock: parseInt(document.getElementById('stock-damaged-qty').value) || 0,
         lowStockThreshold: parseInt(document.getElementById('stock-threshold-qty').value) || 5, imageUrl: document.getElementById('stock-image-url').value,
@@ -824,7 +823,10 @@ async function handleCreateNewStockItem() {
 
     if (!data.itemType || !data.size || !data.category) return showNotification('กรุณากรอกข้อมูลหลักให้ครบ', 'error');
     showLoadingButton(btn, true);
-    try { await apiCall('/api/stock', 'POST', data); onAdminActionSuccess('บันทึกรายการพัสดุสำเร็จ'); } 
+    try { 
+        await apiCall('/api/stock', 'POST', data); 
+        onAdminActionSuccess('บันทึกรายการพัสดุสำเร็จ'); 
+    } 
     catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึกข้อมูล'); }
 }
 
@@ -839,18 +841,37 @@ function handleStockFilter(clickedButton) {
 function populateStockForm(type, size) {
     const item = masterStock.find(s => s.itemType === type && s.size === size);
     if (item) {
-        document.getElementById('stock-type').value = item.itemType; document.getElementById('stock-size').value = item.size;
-        document.getElementById('stock-category').value = item.category || ''; document.getElementById('stock-image-url').value = item.imageUrl || '';
+        document.getElementById('stock-type').value = item.itemType; 
+        document.getElementById('stock-size').value = item.size;
+        document.getElementById('stock-category').value = item.category || ''; 
+        document.getElementById('stock-image-url').value = item.imageUrl || '';
         document.getElementById('stock-image-preview').src = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Preview';
-        document.getElementById('stock-new-qty').value = item.newStock || 0; document.getElementById('stock-used-qty').value = item.usedStock || 0;
-        document.getElementById('stock-damaged-qty').value = item.damagedStock || 0; document.getElementById('stock-threshold-qty').value = item.lowStockThreshold || 5;
-        document.getElementById('stock-type').disabled = true; document.getElementById('stock-size').disabled = true;
+        document.getElementById('stock-new-qty').value = item.newStock || 0; 
+        document.getElementById('stock-used-qty').value = item.usedStock || 0;
+        document.getElementById('stock-damaged-qty').value = item.damagedStock || 0; 
+        document.getElementById('stock-threshold-qty').value = item.lowStockThreshold || 5;
+        
+        // ปลดล็อคให้แก้ชื่อและไซส์ได้
+        document.getElementById('stock-type').disabled = false; 
+        document.getElementById('stock-size').disabled = false;
+        
+        // ซ่อนค่าเก่าไว้เพื่อส่งไปบอกหลังบ้านว่ากำลังแก้ไขรายการไหน
+        const form = document.getElementById('stock-management-form');
+        form.dataset.originalType = item.itemType;
+        form.dataset.originalSize = item.size;
+        
         toggleStockForm(true);
     }
 }
 
 function clearStockForm() {
-    document.getElementById('stock-management-form')?.reset();
+    const form = document.getElementById('stock-management-form');
+    if (form) {
+        form.reset();
+        // ล้าง Dataset ด้วยเพื่อไม่ให้สับสนกับตอนที่กดสร้างใหม่
+        delete form.dataset.originalType;
+        delete form.dataset.originalSize;
+    }
     if(document.getElementById('stock-type')) document.getElementById('stock-type').disabled = false;
     if(document.getElementById('stock-size')) document.getElementById('stock-size').disabled = false;
     const preview = document.getElementById('stock-image-preview'); if(preview) preview.src = 'https://placehold.co/128x128/e2e8f0/64748b?text=Preview';
@@ -942,23 +963,56 @@ function handleUserSearch() { currentUserPage = 1; renderUsersTable(); }
 function changeUserPage(dir) { currentUserPage += dir; renderUsersTable(); }
 
 async function handleSaveUser() {
-    const userData = { name: document.getElementById('user-form-name').value.trim(), department: document.getElementById('user-form-department').value.trim(), username: document.getElementById('user-form-username').value.trim(), password: document.getElementById('user-form-password').value.trim(), role: document.getElementById('user-form-role').value, status: document.getElementById('user-form-status').value };
+    const userData = { 
+        name: document.getElementById('user-form-name').value.trim(), 
+        department: document.getElementById('user-form-department').value.trim(), 
+        username: document.getElementById('user-form-username').value.trim(), 
+        password: document.getElementById('user-form-password').value.trim(), 
+        role: document.getElementById('user-form-role').value, 
+        status: document.getElementById('user-form-status').value 
+    };
+    
     if (!userData.name || !userData.username || !userData.password) return showNotification('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
     showLoadingButton(document.getElementById('save-user-btn'), true);
-    try { await apiCall('/api/users', 'POST', { userData, adminUser: currentUser.username }); onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); } 
+    
+    try { 
+        const form = document.getElementById('user-management-form');
+        const originalUsername = form.dataset.originalUsername;
+        
+        await apiCall('/api/users', 'POST', { userData, adminUser: currentUser.username, originalUsername }); 
+        onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); 
+    } 
     catch(err) { onActionFailure(err); showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); }
 }
 
 function populateUserForm(username) {
     const user = allUsersData.find(u => u.username === username);
     if (user) {
-        document.getElementById('user-form-name').value = user.name || ''; document.getElementById('user-form-department').value = user.department || '';
-        document.getElementById('user-form-username').value = user.username || ''; document.getElementById('user-form-password').value = user.password || ''; 
-        document.getElementById('user-form-role').value = user.role || 'user'; document.getElementById('user-form-status').value = user.status || 'active';
-        document.getElementById('user-form-username').disabled = true; toggleUserForm(true);
+        document.getElementById('user-form-name').value = user.name || ''; 
+        document.getElementById('user-form-department').value = user.department || '';
+        document.getElementById('user-form-username').value = user.username || ''; 
+        document.getElementById('user-form-password').value = user.password || ''; 
+        document.getElementById('user-form-role').value = user.role || 'user'; 
+        document.getElementById('user-form-status').value = user.status || 'active';
+        
+        // ปลดล็อกให้แก้ Username ได้แล้ว
+        document.getElementById('user-form-username').disabled = false; 
+        
+        const form = document.getElementById('user-management-form');
+        form.dataset.originalUsername = user.username;
+        
+        toggleUserForm(true);
     }
 }
-function clearUserForm() { document.getElementById('user-management-form')?.reset(); if(document.getElementById('user-form-username')) document.getElementById('user-form-username').disabled = false; }
+
+function clearUserForm() { 
+    const form = document.getElementById('user-management-form');
+    if (form) {
+        form.reset();
+        delete form.dataset.originalUsername;
+    }
+    if(document.getElementById('user-form-username')) document.getElementById('user-form-username').disabled = false; 
+}
 
 
 function onAdminLogReceived(logs) { allAdminLogData = logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); handleHistoryViewChange(); }
