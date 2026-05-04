@@ -549,6 +549,28 @@
             </div>
         </div>
 
+        <!-- Modal ประวัติสต๊อก (อัปเกรดใหม่) -->
+        <div id="stock-history-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-[55] modal-overlay opacity-0 flex items-center justify-center">
+            <div class="relative mx-auto p-0 border border-slate-100 w-full max-w-3xl shadow-2xl rounded-2xl bg-white modal-container scale-95 overflow-hidden flex flex-col max-h-[85vh]">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span id="stock-history-modal-title">ความเคลื่อนไหวสต๊อก</span>
+                    </h3>
+                    <div class="flex gap-2">
+                        <button id="export-stock-history-btn" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm shadow-emerald-200 transition-all flex items-center gap-1.5">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Export CSV
+                        </button>
+                        <button id="stock-history-modal-close-btn" class="text-slate-400 hover:text-slate-600 bg-white border border-slate-200 p-2 rounded-lg transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="stock-history-modal-content" class="p-6 overflow-y-auto bg-slate-50/30"></div>
+            </div>
+        </div>
+
         <div id="confirm-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-50 modal-overlay opacity-0 flex items-center justify-center">
             <div class="relative mx-auto p-6 border border-slate-100 w-full max-w-sm shadow-2xl rounded-2xl bg-white modal-container scale-95 text-center">
                 <div class="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-amber-50 mb-4 border border-amber-100">
@@ -593,6 +615,69 @@
                 </div>
                 <p id="password-change-error" class="text-red-500 text-xs mt-3 h-4 font-medium"></p>
                 <button id="force-change-password-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-indigo-200 transition-all mt-6">ยืนยันและเข้าสู่ระบบ</button>
+            </div>
+        </div>
+
+        <!-- Modal ปรับปรุงสต๊อกแบบมืออาชีพ -->
+        <div id="advanced-adjust-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-40 backdrop-blur-sm overflow-y-auto h-full w-full z-[60] modal-overlay opacity-0 flex items-center justify-center">
+            <div class="relative mx-auto p-0 border border-slate-100 w-full max-w-md shadow-2xl rounded-2xl bg-white modal-container scale-95 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
+                    <h3 class="text-lg font-black text-indigo-800 flex items-center gap-2">
+                        <span class="text-xl">⚖️</span> ปรับปรุงยอดสต๊อก
+                    </h3>
+                    <button id="close-adjust-modal-btn" class="text-slate-400 hover:text-slate-600 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-6">
+                    <div class="mb-4 text-center">
+                        <p id="adjust-item-name" class="font-bold text-slate-800 text-lg"></p>
+                        <p id="adjust-item-size" class="text-sm text-slate-500"></p>
+                    </div>
+                    
+                    <input type="hidden" id="adjust-target-id">
+                    
+                    <div class="mb-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">1. เลือกสภาพพัสดุที่ต้องการปรับ</label>
+                        <select id="adjust-stock-condition" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 font-medium">
+                            <option value="New">🌟 ของใหม่</option>
+                            <option value="Used">♻️ มือสอง</option>
+                            <option value="Damaged">🗑️ ชำรุด</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4 grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2">2. วิธีการปรับ</label>
+                            <select id="adjust-mode" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium">
+                                <option value="SET">แทนที่ยอดสุทธิ (=)</option>
+                                <option value="ADD">เพิ่มจำนวน (+)</option>
+                                <option value="DEDUCT">ลดจำนวน (-)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ระบุจำนวน (ชิ้น)</label>
+                            <input type="number" id="adjust-qty-input" min="0" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="0">
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">3. สาเหตุการปรับปรุง</label>
+                        <select id="adjust-reason-category" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none mb-3 font-medium">
+                            <option value="นับสต๊อก/ตรวจนับ">📋 นับสต๊อก / ตรวจนับประจำรอบ</option>
+                            <option value="สินค้าสูญหาย">❓ สินค้าสูญหายหาไม่พบ</option>
+                            <option value="พบสินค้าที่หายไป">🔎 พบสินค้าที่เคยสูญหาย</option>
+                            <option value="ชำรุดในคลัง">💥 ชำรุด/เสื่อมสภาพในคลัง</option>
+                            <option value="คีย์ข้อมูลผิดพลาด">⌨️ คีย์ข้อมูลผิดพลาด</option>
+                            <option value="อื่นๆ">📝 อื่นๆ (โปรดระบุ)</option>
+                        </select>
+                        <input type="text" id="adjust-reason-note" placeholder="คำอธิบายเพิ่มเติม (ถ้ามี)..." class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50">
+                    </div>
+
+                    <button id="confirm-advanced-adjust-btn" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-amber-200 transition-all">
+                        บันทึกการปรับปรุงสต๊อก
+                    </button>
+                </div>
             </div>
         </div>
 

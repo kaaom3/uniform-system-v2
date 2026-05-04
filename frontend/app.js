@@ -36,12 +36,12 @@ document.addEventListener('DOMContentLoaded', function() {
     checkSession();
     
     // Auth & Forgot Password
-    document.getElementById('login-btn').addEventListener('click', handleLogin);
+    document.getElementById('login-btn')?.addEventListener('click', handleLogin);
     const handleEnterPress = (e) => { if (e.key === 'Enter') handleLogin(); };
     document.getElementById('username')?.addEventListener('keyup', handleEnterPress);
     document.getElementById('password')?.addEventListener('keyup', handleEnterPress);
 
-    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
     document.getElementById('show-forgot-password-options')?.addEventListener('click', function(e) {
         e.preventDefault();
         document.getElementById('forgot-password-options-container').classList.remove('hidden');
@@ -114,6 +114,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Modals
     document.getElementById('history-modal-close-btn')?.addEventListener('click', closeHistoryModal);
     document.getElementById('user-history-modal')?.addEventListener('click', (e) => { if (e.target.id === 'user-history-modal') closeHistoryModal(); });
+    
+    // ปิด Modal ประวัติสต๊อก
+    document.getElementById('stock-history-modal-close-btn')?.addEventListener('click', () => closeModalAnimation(document.getElementById('stock-history-modal')));
+    document.getElementById('stock-history-modal')?.addEventListener('click', (e) => { if (e.target.id === 'stock-history-modal') closeModalAnimation(document.getElementById('stock-history-modal')); });
+
+    // ปุ่ม Export ประวัติสต๊อก
+    document.getElementById('export-stock-history-btn')?.addEventListener('click', (e) => {
+        const type = e.target.dataset.type;
+        const size = e.target.dataset.size;
+        if(type && size) {
+            window.open(`${API_BASE_URL}/api/export/stock-history?itemType=${encodeURIComponent(type)}&size=${encodeURIComponent(size)}`, '_blank');
+        }
+    });
 });
 
 // --- Event Delegation ---
@@ -141,7 +154,7 @@ document.addEventListener('click', async function(e) {
         const quantityInput = card.querySelector('.approval-quantity-input');
         const reasonInput = card.querySelector('.approval-reason-input');
         
-        // 🔒 ตรวจสอบหาค่า Radio มือ 1 / มือ 2 ให้ชัวร์ 100%
+        // 🔒 ตรวจสอบหาค่า Radio มือ 1 / มือ 2
         const stockTypeRadios = card.querySelectorAll(`input[name="approve-stock-type-${id}"]`);
         let stockType = 'New';
         stockTypeRadios.forEach(radio => {
@@ -223,7 +236,7 @@ document.addEventListener('click', async function(e) {
         });
     }
 
-    // Admin: รับเข้าสต๊อก (Ledger)
+    // Admin: รับเข้าสต๊อก (Ledger IN)
     if (e.target.matches('.receive-stock-btn')) {
         const type = e.target.dataset.type; const size = e.target.dataset.size;
         showPromptModal(`รับของเข้า: ${type} (${size})\nกรอกจำนวนที่รับเข้า (ชิ้น):`, async (qtyStr) => {
@@ -237,39 +250,125 @@ document.addEventListener('click', async function(e) {
         });
     }
 
-    // Admin: ปรับปรุงยอดสต๊อก (Ledger)
+    // Admin: เปิดหน้าต่างปรับปรุงยอดสต๊อก (Advanced Adjustment Modal)
     if (e.target.matches('.adjust-stock-btn')) {
-        const type = e.target.dataset.type; const size = e.target.dataset.size;
-        showPromptModal(`ปรับปรุงยอดของใหม่: ${type} (${size})\nกรอก "ยอดคงเหลือสุทธิ" ที่นับได้:`, async (qtyStr) => {
-            const qty = parseInt(qtyStr);
-            if (isNaN(qty) || qty < 0) return showNotification('กรุณากรอกยอดคงเหลือสุทธิให้ถูกต้อง', 'error');
-            setTimeout(() => {
-                showPromptModal(`เหตุผลในการปรับปรุงยอด:`, async (reason) => {
-                    showLoadingButton(e.target, true);
-                    try {
-                        await apiCall('/api/stock/transaction', 'POST', { itemType: type, size: size, transactionType: 'ADJUST', newBalance: qty, reason: reason, adminUser: currentUser.username });
-                        onAdminActionSuccess(`ปรับปรุงยอดสต๊อกสำเร็จ`);
-                    } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, '✎ ปรับปรุง'); }
-                });
-            }, 300);
-        });
+        const itemType = e.target.dataset.type; 
+        const size = e.target.dataset.size;
+        
+        // ค้นหาข้อมูลสต๊อกปัจจุบัน
+        const stockItem = masterStock.find(s => s.itemType === itemType && s.size === size);
+        if(!stockItem) return showNotification('ไม่พบข้อมูลพัสดุ', 'error');
+
+        // 🛡️ เช็คว่ามี HTML Modal ในหน้าเว็บหรือไม่ (แก้ปัญหา Cannot set properties of null)
+        const targetIdInput = document.getElementById('adjust-target-id');
+        if (!targetIdInput) {
+            return showNotification('❌ ไม่พบหน้าต่างปรับปรุง! โปรดตรวจสอบว่าคุณได้เพิ่มโค้ด Modal ลงในไฟล์ index.html แล้ว', 'error');
+        }
+
+        // ใส่ข้อมูลลงใน Modal
+        targetIdInput.value = `${itemType}|${size}`;
+        if (document.getElementById('adjust-item-name')) document.getElementById('adjust-item-name').textContent = itemType;
+        if (document.getElementById('adjust-item-size')) document.getElementById('adjust-item-size').textContent = `ไซส์: ${size}`;
+        
+        // อัปเดต Dropdown ให้แสดงยอดปัจจุบันด้วย
+        const conditionSelect = document.getElementById('adjust-stock-condition');
+        if (conditionSelect && conditionSelect.options.length >= 3) {
+            conditionSelect.options[0].text = `🌟 ของใหม่ (คงเหลือ: ${stockItem.newStock})`;
+            conditionSelect.options[1].text = `♻️ มือสอง (คงเหลือ: ${stockItem.usedStock})`;
+            conditionSelect.options[2].text = `🗑️ ชำรุด (คงเหลือ: ${stockItem.damagedStock})`;
+        }
+        
+        // รีเซ็ตฟอร์ม
+        if (document.getElementById('adjust-qty-input')) document.getElementById('adjust-qty-input').value = '';
+        if (document.getElementById('adjust-reason-note')) document.getElementById('adjust-reason-note').value = '';
+        
+        // เปิด Modal
+        const modal = document.getElementById('advanced-adjust-modal');
+        if (modal) openModalAnimation(modal);
     }
 
-    // Admin: ดูประวัติสต๊อก
+    // ปิดหน้าต่างปรับปรุง
+    if (e.target.closest('#close-adjust-modal-btn')) {
+        closeModalAnimation(document.getElementById('advanced-adjust-modal'));
+    }
+
+    // กดปุ่มบันทึกการปรับปรุงใน Modal
+    if (e.target.closest('#confirm-advanced-adjust-btn')) {
+        const btn = document.getElementById('confirm-advanced-adjust-btn');
+        const targetIdInput = document.getElementById('adjust-target-id');
+        if (!targetIdInput) return;
+        
+        const targetId = targetIdInput.value.split('|');
+        const itemType = targetId[0];
+        const size = targetId[1];
+        
+        const condition = document.getElementById('adjust-stock-condition').value; // New, Used, Damaged
+        const mode = document.getElementById('adjust-mode').value; // SET, ADD, DEDUCT
+        const qty = parseInt(document.getElementById('adjust-qty-input').value);
+        const reasonCat = document.getElementById('adjust-reason-category').value;
+        const reasonNote = document.getElementById('adjust-reason-note').value.trim();
+
+        if (isNaN(qty) || qty < 0) return showNotification('กรุณากรอกตัวเลขให้ถูกต้อง', 'error');
+
+        // รวมเหตุผล
+        const fullReason = `[${reasonCat}] ${reasonNote}`;
+
+        showLoadingButton(btn, true);
+        try {
+            await apiCall('/api/stock/advanced-adjust', 'POST', { 
+                itemType, size, condition, mode, qty, reason: fullReason, adminUser: currentUser.username 
+            });
+            onAdminActionSuccess(`ปรับปรุงสต๊อก ${itemType} สำเร็จ`);
+            closeModalAnimation(document.getElementById('advanced-adjust-modal'));
+        } catch(err) { 
+            onActionFailure(err); 
+            showLoadingButton(btn, false, 'บันทึกการปรับปรุงสต๊อก'); 
+        }
+    }
+
+    // Admin: ดูประวัติสต๊อก (อัปเดต UI แบบตารางใหม่)
     if (e.target.matches('.history-stock-btn')) {
         const type = e.target.dataset.type; const size = e.target.dataset.size;
-        openHistoryModal(`ความเคลื่อนไหวสต๊อก: ${type} (${size})`);
+        
+        // ผูก Data ให้ปุ่ม Export
+        const exportBtn = document.getElementById('export-stock-history-btn');
+        if(exportBtn) {
+            exportBtn.dataset.type = type;
+            exportBtn.dataset.size = size;
+        }
+
+        document.getElementById('stock-history-modal-title').textContent = `ความเคลื่อนไหวสต๊อก: ${type} (${size})`;
+        const modal = document.getElementById('stock-history-modal');
+        if(modal) openModalAnimation(modal);
+        
+        document.getElementById('stock-history-modal-content').innerHTML = '<div class="flex justify-center my-8"><div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div></div>';
+
         try {
             const history = await apiCall(`/api/stock/history?itemType=${encodeURIComponent(type)}&size=${encodeURIComponent(size)}`);
-            let html = '<ul class="space-y-3 mt-4">';
-            if(history.length === 0) html += '<p class="text-center text-slate-500">ไม่มีประวัติความเคลื่อนไหว</p>';
-            history.forEach(log => {
-                let badgeColor = log.transactionType === 'IN' ? 'bg-emerald-100 text-emerald-700' : log.transactionType === 'OUT' ? 'bg-rose-100 text-red-700' : 'bg-amber-100 text-amber-700';
-                html += `<li class="p-3 bg-slate-50 rounded-lg border border-slate-100 flex justify-between items-start"><div><p class="font-bold text-slate-800 text-sm"><span class="px-2 py-0.5 rounded-md text-[10px] ${badgeColor}">${log.transactionType}</span> ${log.quantity > 0 ? '+'+log.quantity : log.quantity} ชิ้น</p><p class="text-xs text-slate-500 mt-1">เหตุผล: ${log.reason || '-'}</p><p class="text-[10px] text-slate-400 mt-1">ทำรายการโดย: ${log.adminUser}</p></div><span class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border">${new Date(log.createdAt).toLocaleString()}</span></li>`;
-            });
-            html += '</ul>';
-            document.getElementById('history-modal-content').innerHTML = html;
-        } catch(e) { document.getElementById('history-modal-content').innerHTML = '<p class="text-center text-red-500 mt-4">ไม่มี API รองรับ หรือ เกิดข้อผิดพลาด</p>'; }
+            let html = '<div class="overflow-hidden border border-slate-200 rounded-xl shadow-sm"><table class="min-w-full divide-y divide-slate-200"><thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เวลา</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">ประเภท</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">จำนวน</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เหตุผล</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">แอดมิน</th></tr></thead><tbody class="bg-white divide-y divide-slate-100">';
+            
+            if(history.length === 0) {
+                html = '<div class="text-center p-8 bg-white border border-slate-200 rounded-xl"><p class="text-slate-500 font-medium">ไม่มีประวัติความเคลื่อนไหว</p></div>';
+            } else {
+                history.forEach(log => {
+                    let badgeColor = log.transactionType === 'IN' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : log.transactionType.includes('OUT') ? 'bg-rose-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200';
+                    let qtyColor = log.quantity > 0 ? 'text-emerald-600 bg-emerald-50' : log.quantity < 0 ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50';
+                    let qtyPrefix = log.quantity > 0 ? '+' : '';
+                    
+                    html += `<tr>
+                        <td class="p-3 text-xs text-slate-500 whitespace-nowrap">${new Date(log.createdAt).toLocaleString()}</td>
+                        <td class="p-3 text-center"><span class="px-2.5 py-1 rounded-md text-[10px] font-bold border ${badgeColor}">${log.transactionType}</span></td>
+                        <td class="p-3 text-center"><span class="px-3 py-1 rounded-lg text-sm font-black ${qtyColor}">${qtyPrefix}${log.quantity}</span></td>
+                        <td class="p-3 text-xs text-slate-700 font-medium">${log.reason || '-'}</td>
+                        <td class="p-3 text-xs font-semibold text-indigo-600">${log.adminUser}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            document.getElementById('stock-history-modal-content').innerHTML = html;
+        } catch(e) { 
+            document.getElementById('stock-history-modal-content').innerHTML = '<div class="text-center p-8"><p class="text-red-500 font-bold">❌ เกิดข้อผิดพลาดในการโหลดข้อมูล</p></div>'; 
+        }
     }
 
     // Admin: ผู้ใช้ (แก้ไข, ลบ, รีเซ็ตรหัสผ่าน)
@@ -651,12 +750,62 @@ function displayStockSummary(stockData) {
     for (const category in groupedByCategory) {
         container.innerHTML += `<h4 class="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 mt-6 pl-1">${category}</h4>`;
         const table = document.createElement('table'); table.className = 'min-w-full divide-y divide-slate-200 mb-4 border bg-white';
-        table.innerHTML = `<thead class="bg-slate-50"><tr><th class="w-16">รูป</th><th>รายการพัสดุ</th><th class="text-center">ยอดของใหม่</th><th class="text-center">ยอดรวมอื่นๆ</th><th class="text-center">จัดการสต๊อก (Ledger)</th></tr></thead><tbody class="divide-y divide-slate-100"></tbody>`;
+        
+        // อัปเดตหัวตารางใหม่ แสดงช่อง ถูกเบิกไป และ รวมทั้งระบบ
+        table.innerHTML = `<thead class="bg-slate-50"><tr><th class="w-16">รูป</th><th>รายการพัสดุ</th><th class="text-center w-64">จำนวนคงเหลือ (ในคลัง)</th><th class="text-center w-48">สถานะภาพรวมระบบ</th><th class="text-center">จัดการสต๊อก (Ledger)</th></tr></thead><tbody class="divide-y divide-slate-100"></tbody>`;
+        
         const tbody = table.querySelector('tbody');
         groupedByCategory[category].forEach(item => {
-            const tr = document.createElement('tr'); if (item.newStock <= (item.lowStockThreshold || 5)) tr.classList.add('bg-red-50/50');
+            const tr = document.createElement('tr'); 
+            if (item.newStock <= (item.lowStockThreshold || 5)) tr.classList.add('bg-red-50/50');
+            
             const img = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/80x60/e2e8f0/64748b?text=N/A';
-            tr.innerHTML = `<td class="p-2 text-center"><img src="${img}" class="w-12 h-12 object-cover rounded-lg mx-auto border shadow-sm"></td><td class="p-3"><p class="font-bold text-slate-800">${item.itemType}</p><p class="text-xs font-semibold text-slate-500 mt-0.5">Size: <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">${item.size}</span></p></td><td class="p-3 text-center"><span class="text-lg font-black text-emerald-600">${item.newStock}</span></td><td class="p-3 text-center"><p class="text-[10px] text-slate-500 font-bold">มือสอง: <span class="text-blue-600 text-xs">${item.usedStock}</span></p><p class="text-[10px] text-slate-500 font-bold">ชำรุด: <span class="text-red-600 text-xs">${item.damagedStock}</span></p></td><td class="p-3 text-center"><div class="flex gap-1.5 justify-center"><button class="receive-stock-btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">+ รับเข้า</button><button class="adjust-stock-btn bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">✎ ปรับปรุง</button><button class="history-stock-btn bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">⏱ ประวัติ</button></div></td>`;
+            
+            // คำนวณยอด
+            const dispensed = item.dispensedStock || 0;
+            const totalWarehouse = item.newStock + item.usedStock + item.damagedStock;
+            const totalSystem = totalWarehouse + dispensed;
+
+            tr.innerHTML = `<td class="p-2 text-center"><img src="${img}" class="w-12 h-12 object-cover rounded-lg mx-auto border shadow-sm"></td>
+            <td class="p-3">
+                <p class="font-bold text-slate-800">${item.itemType}</p>
+                <p class="text-xs font-semibold text-slate-500 mt-0.5">Size: <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">${item.size}</span></p>
+            </td>
+            <td class="p-3">
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100 shadow-sm">
+                        <p class="text-[10px] font-bold text-emerald-600 mb-0.5">ใหม่</p>
+                        <p class="text-lg font-black text-emerald-700 leading-none">${item.newStock}</p>
+                    </div>
+                    <div class="bg-blue-50 p-1.5 rounded-lg border border-blue-100 shadow-sm">
+                        <p class="text-[10px] font-bold text-blue-600 mb-0.5">มือสอง</p>
+                        <p class="text-sm font-black text-blue-700 leading-none mt-1">${item.usedStock}</p>
+                    </div>
+                    <div class="bg-rose-50 p-1.5 rounded-lg border border-rose-100 shadow-sm">
+                        <p class="text-[10px] font-bold text-rose-600 mb-0.5">ชำรุด</p>
+                        <p class="text-sm font-black text-rose-700 leading-none mt-1">${item.damagedStock}</p>
+                    </div>
+                </div>
+            </td>
+            <td class="p-3">
+                <div class="flex flex-col gap-1.5 justify-center h-full">
+                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100">
+                        <span>ถูกเบิกไป:</span>
+                        <span class="text-sm">${dispensed} ชิ้น</span>
+                    </div>
+                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-slate-800 text-white rounded-md border border-slate-700 shadow-sm">
+                        <span>รวมทั้งระบบ:</span>
+                        <span class="text-sm text-amber-300">${totalSystem} ชิ้น</span>
+                    </div>
+                </div>
+            </td>
+            <td class="p-3 text-center">
+                <div class="flex gap-1.5 justify-center">
+                    <button class="receive-stock-btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">+ รับเข้า</button>
+                    <button class="adjust-stock-btn bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">✎ ปรับปรุง</button>
+                    <button class="history-stock-btn bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">⏱ ประวัติ</button>
+                </div>
+            </td>`;
             tbody.appendChild(tr);
         });
         container.appendChild(table);
@@ -748,7 +897,7 @@ async function handleImportUsersCSV() {
     showLoadingButton(btn, true);
     try {
         const response = await fetch(`${API_BASE_URL}/api/users/import`, { method: 'POST', body: formData });
-        const text = await response.text(); // อ่านผลลัพธ์เป็น Text ก่อนเพื่อป้องกันเว็บค้าง
+        const text = await response.text(); 
         try {
             const result = JSON.parse(text);
             if(result.success) {
@@ -916,7 +1065,6 @@ async function handleForgotPasswordRequest() {
     } catch(e) { document.getElementById('forgot-password-error').textContent = e.message; }
 }
 
-async function handlePerformReset() {} // ไม่ใช้แล้วเพราะแอดมินจัดการให้
 function showForceChangePasswordModal() { openModalAnimation(document.getElementById('force-change-password-modal')); }
 
 async function handleForceChangePassword() {
