@@ -15,7 +15,7 @@ const Log = require('./models/Log');
 const StockTransaction = require('./models/StockTransaction');
 const PasswordReset = require('./models/PasswordReset');
 
-// Utils (หรือ ./utils/lineNotify ขึ้นอยู่กับตำแหน่งไฟล์ของคุณ)
+// Utils
 const { sendPushMessage } = require('./lineNotify'); 
 
 const app = express();
@@ -47,76 +47,52 @@ const logAdminAction = async (adminName, action, details) => {
 };
 
 // ==========================================
-// 🤖 LINE WEBHOOK (ระบบตอบโต้อัตโนมัติ)
+// 🤖 LINE WEBHOOK
 // ==========================================
 const LINE_TOKEN = "dCnA72Q1lQkAo6W2wY4q/3JLZiUJ0UqF3r/5H/kYLVylWAaab2u3FRxeNmJN536psAEbkV56INlKAoCMSfD9wF0CTxZ7x/WAgUKVv0warZ5lbiA1BTIdtwG26FuNFudDcHun6BslptbMbk6xpk5QdQdB04t89/1O/w1cDnyilFU=";
 
 async function replyLineMessage(replyToken, text) {
     return new Promise((resolve, reject) => {
-        if (replyToken === '00000000000000000000000000000000' || replyToken === 'ffffffffffffffffffffffffffffffff') {
-            return resolve();
-        }
+        if (replyToken === '00000000000000000000000000000000' || replyToken === 'ffffffffffffffffffffffffffffffff') return resolve();
 
         const payload = JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] });
-
         const options = {
-            hostname: 'api.line.me',
-            path: '/v2/bot/message/reply',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${LINE_TOKEN}`,
-                'Content-Length': Buffer.byteLength(payload)
-            }
+            hostname: 'api.line.me', path: '/v2/bot/message/reply', method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}`, 'Content-Length': Buffer.byteLength(payload) }
         };
 
         const req = https.request(options, (res) => {
-            let body = '';
-            res.on('data', (chunk) => body += chunk);
-            res.on('end', () => {
-                console.log(`📤 [LINE Reply Result]: HTTP ${res.statusCode}`, body);
-                resolve(body);
-            });
+            let body = ''; res.on('data', (chunk) => body += chunk);
+            res.on('end', () => resolve(body));
         });
 
-        req.on('error', (e) => {
-            console.error('❌ [LINE Reply Error]:', e.message);
-            reject(e);
-        });
-
-        req.write(payload);
-        req.end();
+        req.on('error', (e) => reject(e));
+        req.write(payload); req.end();
     });
 }
 
 app.post('/api/webhook/line', async (req, res) => {
     try {
         const events = req.body.events;
-        res.status(200).send('OK'); // ตอบกลับ LINE ทันที
+        res.status(200).send('OK');
 
         if (!events || events.length === 0) return;
 
         for (const event of events) {
             const replyToken = event.replyToken;
-
             if (event.type === 'follow') {
                 const welcomeText = "สวัสดีครับ! 🙏 ยินดีต้อนรับสู่ระบบเบิก-คืนชุดยูนิฟอร์ม\n\n🔑 หากคุณลืมรหัสผ่าน ให้พิมพ์ข้อความส่งมาหาเราตามนี้ครับ:\n👉 ลืมรหัส [รหัสพนักงาน]\n\nตัวอย่างเช่น: ลืมรหัส 1001";
                 await replyLineMessage(replyToken, welcomeText);
             }
-
             if (event.type === 'message' && event.message.type === 'text') {
                 const text = event.message.text.trim();
-
                 if (text.startsWith('ลืมรหัส')) {
                     const username = text.replace('ลืมรหัส', '').trim();
-                    
                     if (username) {
                         const user = await User.findOne({ username });
                         if (user) {
                             await new PasswordReset({ username, status: 'Pending' }).save();
                             await replyLineMessage(replyToken, `รับเรื่องแล้ว! ⏳\nระบบได้ส่งคำขอรีเซ็ตรหัสผ่านของพนักงาน "${username}" ให้แอดมินแล้วครับ กรุณารอแอดมินแจ้งรหัสผ่านชั่วคราวให้ทราบครับ`);
-                            
-                            // ส่งแจ้งเตือนเข้าไปที่กลุ่มไลน์แอดมิน
                             sendPushMessage({ username: username }, 'รีเซ็ตรหัสผ่าน');
                         } else {
                             await replyLineMessage(replyToken, `❌ ขออภัยครับ ไม่พบรหัสพนักงาน "${username}" ในระบบ กรุณาตรวจสอบอีกครั้ง`);
@@ -127,15 +103,11 @@ app.post('/api/webhook/line', async (req, res) => {
                 }
             }
         }
-    } catch (err) {
-        console.error("❌ [Webhook Critical Error]:", err);
-        if (!res.headersSent) res.status(500).send('Error');
-    }
+    } catch (err) { console.error("❌ [Webhook Error]:", err); }
 });
 
-
 // ==========================================
-// 🔑 AUTHENTICATION & USERS & PASSWORD RESET
+// 🔑 AUTHENTICATION & USERS
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
     try {
@@ -161,10 +133,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ error: 'ไม่พบรหัสพนักงานนี้ในระบบ' });
         await new PasswordReset({ username, status: 'Pending' }).save();
-        
-        // ส่งแจ้งเตือนเข้าไปที่กลุ่มไลน์แอดมิน
         sendPushMessage({ username: username }, 'รีเซ็ตรหัสผ่าน');
-        
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -191,7 +160,7 @@ app.post('/api/users', async (req, res) => {
     try {
         const { userData, adminUser, originalUsername } = req.body;
         
-        // 💡 โหมดแก้ไข (ถ้ามีการส่ง originalUsername มาด้วย)
+        // 💡 จัดการเมื่อมีการ "แก้ไข" ข้อมูลพนักงาน (Username เปลี่ยนได้)
         if (originalUsername) {
             if (originalUsername !== userData.username) {
                 const duplicate = await User.findOne({ username: userData.username });
@@ -202,7 +171,7 @@ app.post('/api/users', async (req, res) => {
             return res.json({ success: true });
         }
 
-        // 💡 โหมดสร้างใหม่ / หรือไม่ได้ส่ง originalUsername
+        // โหมดสร้างผู้ใช้ใหม่
         const existing = await User.findOne({ username: userData.username });
         if (existing) {
             await User.findOneAndUpdate({ username: userData.username }, userData);
@@ -265,7 +234,6 @@ app.get('/api/export/history', async (req, res) => {
     } catch (err) { res.status(500).send("Export Error"); }
 });
 
-// API: ดาวน์โหลดประวัติความเคลื่อนไหวสต๊อก (เฉพาะไอเทม)
 app.get('/api/export/stock-history', async (req, res) => {
     try {
         const { itemType, size } = req.query;
@@ -290,65 +258,47 @@ app.get('/api/export/stock-history', async (req, res) => {
 // ==========================================
 app.get('/api/stock', async (req, res) => {
     try {
-        // ดึงข้อมูลสต๊อกทั้งหมดในคลัง
         const stocks = await Stock.find().lean();
-        
-        // ดึงข้อมูลคำขอเบิกที่ของยังอยู่กับพนักงาน (อนุมัติแล้ว หรือ กำลังส่งคืน)
         const activeRequests = await Request.find({ status: { $in: ['Approved', 'Pending Return'] } });
         
-        // คำนวณว่าแต่ละประเภท/ไซส์ ถูกเบิกไปกี่ตัว
         const dispensedMap = {};
         activeRequests.forEach(req => {
             const key = `${req.itemType}_${req.size}`;
             dispensedMap[key] = (dispensedMap[key] || 0) + req.quantity;
         });
 
-        // ประกอบร่างข้อมูลสต๊อกในคลัง + จำนวนที่ถูกเบิกไป
         const enrichedStocks = stocks.map(stock => ({
             ...stock,
             dispensedStock: dispensedMap[`${stock.itemType}_${stock.size}`] || 0
         }));
 
         res.json(enrichedStocks);
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/stock', async (req, res) => {
     try {
-        const { itemType, size, originalItemType, originalSize, adminUser, ...stockData } = req.body;
+        // ดึงเฉพาะตัวแปรที่ต้องการ ข้อมูลอื่นๆ ที่รับมาจะถูกเมินทิ้ง
+        const { itemType, size, originalItemType, originalSize, adminUser, imageUrl, category, newStock, usedStock, damagedStock, lowStockThreshold } = req.body;
         
-        // 💡 โหมดแก้ไข (ถ้ามีการส่ง originalItemType มาด้วย)
+        // 💡 จัดการเมื่อมีการ "แก้ไข" (อนุญาตให้อัปเดตแค่ "รูปภาพ" เพียงอย่างเดียวเท่านั้น)
         if (originalItemType && originalSize) {
-            if (itemType !== originalItemType || size !== originalSize) {
-                const duplicate = await Stock.findOne({ itemType, size });
-                if (duplicate) return res.status(400).json({ error: 'ชื่อพัสดุและไซส์นี้มีอยู่แล้วในระบบ' });
-                
-                // อัปเดตประวัติธุรกรรม (StockTransaction) ให้ชื่อ/ไซส์ตรงกัน
-                await StockTransaction.updateMany(
-                    { itemType: originalItemType, size: originalSize },
-                    { $set: { itemType: itemType, size: size } }
-                );
-                // อัปเดตคำขอเบิก (Request) ให้ชื่อ/ไซส์ตรงกัน
-                await Request.updateMany(
-                    { itemType: originalItemType, size: originalSize },
-                    { $set: { itemType: itemType, size: size } }
-                );
-            }
+            const stock = await Stock.findOne({ itemType: originalItemType, size: originalSize });
+            if (!stock) return res.status(404).json({ error: 'ไม่พบพัสดุรายการนี้' });
+
+            stock.imageUrl = imageUrl; // อัปเดตเฉพาะรูปภาพ
+            await stock.save();
             
-            await Stock.findOneAndUpdate({ itemType: originalItemType, size: originalSize }, { itemType, size, ...stockData });
-            await logAdminAction(adminUser, 'Stock Management', `แก้ไขข้อมูลพัสดุ: ${originalItemType}(${originalSize}) -> ${itemType}(${size})`);
+            await logAdminAction(adminUser, 'Stock Management', `อัปเดตรูปภาพพัสดุ: ${originalItemType}(${originalSize})`);
             return res.json({ success: true });
         }
 
-        // 💡 โหมดสร้างใหม่
+        // 💡 โหมดสร้างใหม่ (ไม่มี originalItemType ส่งมา)
         const existing = await Stock.findOne({ itemType, size });
         if (existing) {
-            await Stock.findOneAndUpdate({ itemType, size }, stockData);
-            await logAdminAction(adminUser, 'Stock Management', `แก้ไขข้อมูลพัสดุ: ${itemType} (${size})`);
+            return res.status(400).json({ error: 'พัสดุชื่อและไซส์นี้ มีข้อมูลอยู่ในระบบแล้ว' });
         } else {
-            await new Stock({ itemType, size, ...stockData }).save();
+            await new Stock({ itemType, size, category, newStock, usedStock, damagedStock, lowStockThreshold, imageUrl }).save();
             await logAdminAction(adminUser, 'Stock Management', `สร้างรายการพัสดุใหม่: ${itemType} (${size})`);
         }
         res.json({ success: true });
@@ -372,62 +322,37 @@ app.post('/api/stock/transaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Advanced Adjustment API
 app.post('/api/stock/advanced-adjust', async (req, res) => {
     try {
         const { itemType, size, condition, mode, qty, reason, adminUser } = req.body;
         const stock = await Stock.findOne({ itemType, size });
         if (!stock) return res.status(404).json({ error: 'ไม่พบรายการพัสดุนี้ในระบบ' });
 
-        let diffQty = 0;
-        let conditionText = '';
-
-        // 1. ตรวจสอบว่ากำลังปรับปรุงสภาพไหน
+        let diffQty = 0; let conditionText = '';
         let currentStockQty = 0;
+        
         if (condition === 'New') { currentStockQty = stock.newStock; conditionText = 'ของใหม่'; }
         else if (condition === 'Used') { currentStockQty = stock.usedStock; conditionText = 'มือสอง'; }
         else if (condition === 'Damaged') { currentStockQty = stock.damagedStock; conditionText = 'ชำรุด'; }
 
-        // 2. คำนวณส่วนต่างตามโหมดที่เลือก (SET, ADD, DEDUCT)
-        if (mode === 'SET') {
-            diffQty = qty - currentStockQty; 
-        } else if (mode === 'ADD') {
-            diffQty = qty;
-        } else if (mode === 'DEDUCT') {
-            diffQty = -Math.abs(qty); // บังคับติดลบ
-        }
+        if (mode === 'SET') diffQty = qty - currentStockQty; 
+        else if (mode === 'ADD') diffQty = qty;
+        else if (mode === 'DEDUCT') diffQty = -Math.abs(qty);
 
-        // ตรวจสอบว่าพยายามลดยอดจนติดลบหรือไม่
-        if (currentStockQty + diffQty < 0) {
-            throw new Error(`ไม่สามารถลดยอดได้ (สต๊อกปัจจุบันมีเพียง ${currentStockQty})`);
-        }
-
-        // 3. ถ้าไม่มีการเปลี่ยนแปลง ให้ข้ามไปเลย
+        if (currentStockQty + diffQty < 0) throw new Error(`ไม่สามารถลดยอดได้ (สต๊อกปัจจุบันมีเพียง ${currentStockQty})`);
         if (diffQty === 0) return res.json({ success: true });
 
-        // 4. บันทึกค่ายอดใหม่ลง Database
         if (condition === 'New') stock.newStock += diffQty;
         else if (condition === 'Used') stock.usedStock += diffQty;
         else if (condition === 'Damaged') stock.damagedStock += diffQty;
-        
         await stock.save();
 
-        // 5. บันทึกลงสมุดบัญชี (Ledger)
         const detailedReason = `ปรับปรุงยอด(${conditionText}): ${diffQty > 0 ? '+' : ''}${diffQty} ชิ้น - ${reason}`;
-        await new StockTransaction({ 
-            itemType, size, 
-            transactionType: 'ADJUST', 
-            quantity: diffQty, 
-            reason: detailedReason, 
-            adminUser 
-        }).save();
-
+        await new StockTransaction({ itemType, size, transactionType: 'ADJUST', quantity: diffQty, reason: detailedReason, adminUser }).save();
         await logAdminAction(adminUser, 'Stock Adjustment', `ปรับปรุงสต๊อก: ${itemType}(${size}) ${detailedReason}`);
+        
         res.json({ success: true });
-
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/stock/history', async (req, res) => {
@@ -506,7 +431,6 @@ app.post('/api/admin/approve', async (req, res) => {
         
         const isUsed = stockType === 'Used';
 
-        // เช็คว่าสต๊อกพอมั้ย และลดสต๊อก
         if (isUsed) {
             if (stock.usedStock < approvedQuantity) throw new Error('สต็อกของมือสองไม่พอ');
             stock.usedStock -= approvedQuantity;
@@ -519,16 +443,9 @@ app.post('/api/admin/approve', async (req, res) => {
         const transactionType = isUsed ? 'OUT-USED' : 'OUT';
         const reasonText = isUsed ? `เบิกจ่ายให้ ${request.requesterName} (มือสอง)` : `เบิกจ่ายให้ ${request.requesterName}`;
 
-        await new StockTransaction({ 
-            itemType: request.itemType, size: request.size, transactionType: transactionType, 
-            quantity: -Math.abs(approvedQuantity), reason: reasonText, adminUser 
-        }).save();
+        await new StockTransaction({ itemType: request.itemType, size: request.size, transactionType: transactionType, quantity: -Math.abs(approvedQuantity), reason: reasonText, adminUser }).save();
 
-        request.status = 'Approved'; 
-        request.quantity = approvedQuantity; 
-        request.notes = `อนุมัติโดย ${adminUser} ${isUsed ? '[จ่ายมือสอง]' : ''} ${reason ? '(' + reason + ')' : ''}`; 
-        await request.save();
-        
+        request.status = 'Approved'; request.quantity = approvedQuantity; request.notes = `อนุมัติโดย ${adminUser} ${isUsed ? '[จ่ายมือสอง]' : ''} ${reason ? '(' + reason + ')' : ''}`; await request.save();
         await logAdminAction(adminUser, 'Approval', `อนุมัติใบเบิก ${requestId} ${isUsed ? '(ของมือสอง)' : ''}`);
         sendPushMessage(request, 'อนุมัติคำขอ'); 
         

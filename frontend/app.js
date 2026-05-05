@@ -13,6 +13,8 @@ const rowsPerPage = 10;
 let pollingInterval = null;
 let currentPendingRequests = [];
 
+let currentEditUser = null;
+
 // ==========================================
 // 🚀 Helper: ฟังก์ชันสำหรับยิง API หลัก
 // ==========================================
@@ -34,6 +36,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 // ==========================================
 document.addEventListener('DOMContentLoaded', function() {
     checkSession();
+    injectSuperStockModal(); // 💡 สร้างหน้าต่าง Modal ใหม่สำหรับจัดการสต๊อก
     
     // Auth & Forgot Password
     document.getElementById('login-btn')?.addEventListener('click', handleLogin);
@@ -63,24 +66,30 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('my-history-header')?.addEventListener('click', toggleMyHistory);
     document.getElementById('my-requests-header')?.addEventListener('click', toggleMyRequests);
 
-    // Admin Stock & Users
-    document.getElementById('update-stock-btn')?.addEventListener('click', handleCreateNewStockItem);
-    document.getElementById('clear-stock-form-btn')?.addEventListener('click', clearStockForm);
-    
-    // อัปโหลดไฟล์รูปภาพ
-    document.getElementById('stock-image-upload')?.addEventListener('change', handleImageUpload);
-    
+    // Admin Users
     document.getElementById('save-user-btn')?.addEventListener('click', handleSaveUser);
     document.getElementById('clear-user-form-btn')?.addEventListener('click', clearUserForm);
-    
-    // นำเข้า CSV
     document.getElementById('import-users-btn')?.addEventListener('click', handleImportUsersCSV);
-    
     document.getElementById('user-search-input')?.addEventListener('keyup', handleUserSearch);
     document.getElementById('prev-user-page-btn')?.addEventListener('click', () => changeUserPage(-1));
     document.getElementById('next-user-page-btn')?.addEventListener('click', () => changeUserPage(1));
-    document.getElementById('toggle-stock-form-btn')?.addEventListener('click', () => toggleStockForm());
     document.getElementById('toggle-user-form-btn')?.addEventListener('click', () => toggleUserForm());
+
+    // 💡 Hijack ปุ่ม "เพิ่มพัสดุ" เดิม ให้มาเปิด Modal ระบบใหม่แทน
+    const oldToggleBtn = document.getElementById('toggle-stock-form-btn');
+    if (oldToggleBtn) {
+        oldToggleBtn.innerHTML = '<span class="text-lg">➕</span> เพิ่มพัสดุใหม่ (ระบบใหม่)';
+        oldToggleBtn.classList.replace('bg-indigo-50', 'bg-indigo-600');
+        oldToggleBtn.classList.replace('text-indigo-600', 'text-white');
+        oldToggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openSuperStockModal(false); // เปิดโหมดสร้างใหม่
+        });
+    }
+    // ซ่อนฟอร์มแบบเก่าทิ้งไปเลย ป้องกันคนสับสน
+    const oldFormArea = document.getElementById('stock-form-content');
+    if (oldFormArea) oldFormArea.style.display = 'none';
 
     // Admin Panel Tabs & History
     document.getElementById('admin-dashboard-panel')?.addEventListener('click', (e) => {
@@ -118,6 +127,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // ปิด Modal ประวัติสต๊อก
     document.getElementById('stock-history-modal-close-btn')?.addEventListener('click', () => closeModalAnimation(document.getElementById('stock-history-modal')));
     document.getElementById('stock-history-modal')?.addEventListener('click', (e) => { if (e.target.id === 'stock-history-modal') closeModalAnimation(document.getElementById('stock-history-modal')); });
+
+    // ปิด Modal ปรับปรุงสต๊อก (Advanced Adjust)
+    document.getElementById('close-adjust-modal-btn')?.addEventListener('click', () => closeModalAnimation(document.getElementById('advanced-adjust-modal')));
+    document.getElementById('advanced-adjust-modal')?.addEventListener('click', (e) => { if (e.target.id === 'advanced-adjust-modal') closeModalAnimation(document.getElementById('advanced-adjust-modal')); });
 
     // ปุ่ม Export ประวัติสต๊อก
     document.getElementById('export-stock-history-btn')?.addEventListener('click', (e) => {
@@ -165,7 +178,6 @@ document.addEventListener('click', async function(e) {
         const originalQuantity = parseInt(quantityInput.max);
         const reason = reasonInput.value.trim();
         
-        // ดึงค่ายอดคงเหลือล่าสุดที่ถูกฝังไว้ใน Dataset
         const newStock = parseInt(card.dataset.newStock) || 0;
         const usedStock = parseInt(card.dataset.usedStock) || 0;
 
@@ -173,7 +185,6 @@ document.addEventListener('click', async function(e) {
             return showNotification(`จำนวนที่อนุมัติต้องอยู่ระหว่าง 1 ถึง ${originalQuantity}`, 'error');
         }
 
-        // 🔒 ตรวจสอบสต็อกฝั่งหน้าเว็บให้ครอบคลุมก่อนส่งไปหลังบ้าน
         if (stockType === 'Used' && approvedQuantity > usedStock) {
             return showNotification(`❌ สต็อกมือสองไม่เพียงพอ (เหลือ ${usedStock} ชิ้น)`, 'error');
         }
@@ -236,6 +247,18 @@ document.addEventListener('click', async function(e) {
         });
     }
 
+    // 💡 Admin: กดปุ่มแก้ไขข้อมูลพัสดุ (เปิด Super Modal เพื่อแก้อัปโหลดรูป)
+    if (e.target.matches('.edit-stock-btn')) {
+        const type = e.target.dataset.type; 
+        const size = e.target.dataset.size;
+        const item = masterStock.find(s => s.itemType === type && s.size === size);
+        if (item) {
+            openSuperStockModal(true, item);
+        } else {
+            showNotification('ไม่พบข้อมูลพัสดุ', 'error');
+        }
+    }
+
     // Admin: รับเข้าสต๊อก (Ledger IN)
     if (e.target.matches('.receive-stock-btn')) {
         const type = e.target.dataset.type; const size = e.target.dataset.size;
@@ -254,23 +277,16 @@ document.addEventListener('click', async function(e) {
     if (e.target.matches('.adjust-stock-btn')) {
         const itemType = e.target.dataset.type; 
         const size = e.target.dataset.size;
-        
-        // ค้นหาข้อมูลสต๊อกปัจจุบัน
         const stockItem = masterStock.find(s => s.itemType === itemType && s.size === size);
         if(!stockItem) return showNotification('ไม่พบข้อมูลพัสดุ', 'error');
 
-        // 🛡️ เช็คว่ามี HTML Modal ในหน้าเว็บหรือไม่
         const targetIdInput = document.getElementById('adjust-target-id');
-        if (!targetIdInput) {
-            return showNotification('❌ ไม่พบหน้าต่างปรับปรุง! โปรดตรวจสอบว่าคุณได้เพิ่มโค้ด Modal ลงในไฟล์ index.html แล้ว', 'error');
-        }
+        if (!targetIdInput) return showNotification('❌ ไม่พบหน้าต่างปรับปรุง!', 'error');
 
-        // ใส่ข้อมูลลงใน Modal
         targetIdInput.value = `${itemType}|${size}`;
         if (document.getElementById('adjust-item-name')) document.getElementById('adjust-item-name').textContent = itemType;
         if (document.getElementById('adjust-item-size')) document.getElementById('adjust-item-size').textContent = `ไซส์: ${size}`;
         
-        // อัปเดต Dropdown ให้แสดงยอดปัจจุบันด้วย
         const conditionSelect = document.getElementById('adjust-stock-condition');
         if (conditionSelect && conditionSelect.options.length >= 3) {
             conditionSelect.options[0].text = `🌟 ของใหม่ (คงเหลือ: ${stockItem.newStock})`;
@@ -278,11 +294,9 @@ document.addEventListener('click', async function(e) {
             conditionSelect.options[2].text = `🗑️ ชำรุด (คงเหลือ: ${stockItem.damagedStock})`;
         }
         
-        // รีเซ็ตฟอร์ม
         if (document.getElementById('adjust-qty-input')) document.getElementById('adjust-qty-input').value = '';
         if (document.getElementById('adjust-reason-note')) document.getElementById('adjust-reason-note').value = '';
         
-        // เปิด Modal
         const modal = document.getElementById('advanced-adjust-modal');
         if (modal) openModalAnimation(modal);
     }
@@ -305,7 +319,6 @@ document.addEventListener('click', async function(e) {
 
         if (isNaN(qty) || qty < 0) return showNotification('กรุณากรอกตัวเลขให้ถูกต้อง', 'error');
 
-        // รวมเหตุผล
         const fullReason = `[${reasonCat}] ${reasonNote}`;
 
         showLoadingButton(btn, true);
@@ -321,16 +334,12 @@ document.addEventListener('click', async function(e) {
         }
     }
 
-    // Admin: ดูประวัติสต๊อก (อัปเดต UI แบบตารางใหม่)
+    // Admin: ดูประวัติสต๊อก 
     if (e.target.matches('.history-stock-btn')) {
         const type = e.target.dataset.type; const size = e.target.dataset.size;
         
-        // ผูก Data ให้ปุ่ม Export
         const exportBtn = document.getElementById('export-stock-history-btn');
-        if(exportBtn) {
-            exportBtn.dataset.type = type;
-            exportBtn.dataset.size = size;
-        }
+        if(exportBtn) { exportBtn.dataset.type = type; exportBtn.dataset.size = size; }
 
         document.getElementById('stock-history-modal-title').textContent = `ความเคลื่อนไหวสต๊อก: ${type} (${size})`;
         const modal = document.getElementById('stock-history-modal');
@@ -417,14 +426,226 @@ document.addEventListener('change', function(e) {
 });
 
 // ==========================================
-// 🔑 ระบบ Login / Logout / Change Password
+// 💡 ระบบ SUPER MODAL (จัดการสต๊อกแบบใหม่)
 // ==========================================
+function injectSuperStockModal() {
+    if (document.getElementById('super-stock-modal')) return;
+    const modalHTML = `
+    <div id="super-stock-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm overflow-y-auto h-full w-full z-[80] flex items-center justify-center transition-opacity opacity-0">
+        <div class="relative mx-auto p-0 border border-slate-100 w-full max-w-2xl shadow-2xl rounded-2xl bg-white modal-container scale-95 transition-all overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-600">
+                <h3 class="text-lg font-black text-white flex items-center gap-2" id="super-stock-modal-title">
+                    <span class="text-xl">📦</span> จัดการข้อมูลพัสดุ
+                </h3>
+                <button id="close-super-stock-modal" class="text-indigo-200 hover:text-white transition-colors bg-transparent border-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto bg-slate-50 flex-grow" id="super-stock-modal-body">
+                <div class="space-y-4">
+                    <input type="hidden" id="super-stock-original-type">
+                    <input type="hidden" id="super-stock-original-size">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="col-span-1 md:col-span-2 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-xl bg-white">
+                            <img id="super-stock-image-preview" src="https://placehold.co/128x128/e2e8f0/64748b?text=Image" class="w-32 h-32 object-cover rounded-lg shadow-sm mb-3 border border-slate-200">
+                            <label class="cursor-pointer bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg text-xs font-bold transition-colors border border-indigo-200">
+                                📸 อัปโหลดรูปภาพใหม่
+                                <input type="file" id="super-stock-image-upload" class="hidden" accept="image/*">
+                            </label>
+                            <input type="hidden" id="super-stock-image-url">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อรายการพัสดุ <span class="text-red-500">*</span></label>
+                            <input type="text" id="super-stock-type" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ไซส์ / ขนาด <span class="text-red-500">*</span></label>
+                            <input type="text" id="super-stock-size" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
+                        </div>
+                        <div class="col-span-1 md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">หมวดหมู่ <span class="text-red-500">*</span></label>
+                            <input type="text" id="super-stock-category" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white" placeholder="เช่น เสื้อ, กางเกง, อุปกรณ์">
+                        </div>
+
+                        <div class="bg-white p-3 rounded-xl border border-slate-200 col-span-1 md:col-span-2 grid grid-cols-3 gap-3 shadow-sm">
+                            <div>
+                                <label class="block text-[10px] font-bold text-emerald-600 uppercase mb-1 text-center">🌟 ของใหม่</label>
+                                <input type="number" id="super-stock-new-qty" min="0" value="0" class="w-full py-2 px-3 border border-emerald-200 bg-emerald-50 rounded-lg text-lg font-black text-emerald-700 text-center focus:ring-2 focus:ring-emerald-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1 text-center">♻️ มือสอง</label>
+                                <input type="number" id="super-stock-used-qty" min="0" value="0" class="w-full py-2 px-3 border border-blue-200 bg-blue-50 rounded-lg text-lg font-black text-blue-700 text-center focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-rose-600 uppercase mb-1 text-center">🗑️ ชำรุด</label>
+                                <input type="number" id="super-stock-damaged-qty" min="0" value="0" class="w-full py-2 px-3 border border-rose-200 bg-rose-50 rounded-lg text-lg font-black text-rose-700 text-center focus:ring-2 focus:ring-rose-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div class="col-span-1 md:col-span-2">
+                            <label class="block text-xs font-bold text-amber-600 uppercase mb-1">แจ้งเตือนเมื่อสต๊อกต่ำกว่า (ชิ้น)</label>
+                            <input type="number" id="super-stock-threshold-qty" min="0" value="5" class="w-full py-2 px-3 border border-amber-200 bg-amber-50 rounded-lg text-sm font-bold text-center focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-white flex justify-end gap-3 rounded-b-2xl shadow-inner">
+                <button id="cancel-super-stock" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">ยกเลิก</button>
+                <button id="save-super-stock" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    บันทึกข้อมูล
+                </button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // ปิด Modal
+    const closeModal = () => closeModalAnimation(document.getElementById('super-stock-modal'));
+    document.getElementById('close-super-stock-modal').addEventListener('click', closeModal);
+    document.getElementById('cancel-super-stock').addEventListener('click', closeModal);
+    document.getElementById('super-stock-modal').addEventListener('click', (e) => { if(e.target.id === 'super-stock-modal') closeModal(); });
+
+    // อัปโหลดรูป (เฉพาะของ Modal นี้)
+    document.getElementById('super-stock-image-upload').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const preview = document.getElementById('super-stock-image-preview');
+        preview.src = URL.createObjectURL(file); 
+        
+        const formData = new FormData(); formData.append('image', file);
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/upload`, { method: 'POST', body: formData });
+            const text = await response.text();
+            try {
+                const result = JSON.parse(text);
+                if(result.imageUrl) { document.getElementById('super-stock-image-url').value = result.imageUrl; showNotification('อัปโหลดสำเร็จ', 'success'); }
+                else throw new Error('อัปโหลดไม่สำเร็จ');
+            } catch(err) { throw new Error('เซิร์ฟเวอร์ขัดข้อง'); }
+        } catch(err) { showNotification(err.message, 'error'); }
+    });
+
+    // บันทึกข้อมูล
+    document.getElementById('save-super-stock').addEventListener('click', async (e) => {
+        const btn = e.target;
+        const data = {
+            itemType: document.getElementById('super-stock-type').value.trim(), 
+            size: document.getElementById('super-stock-size').value.trim(),
+            originalItemType: document.getElementById('super-stock-original-type').value || null, 
+            originalSize: document.getElementById('super-stock-original-size').value || null,
+            category: document.getElementById('super-stock-category').value.trim(), 
+            newStock: parseInt(document.getElementById('super-stock-new-qty').value) || 0,
+            usedStock: parseInt(document.getElementById('super-stock-used-qty').value) || 0, 
+            damagedStock: parseInt(document.getElementById('super-stock-damaged-qty').value) || 0,
+            lowStockThreshold: parseInt(document.getElementById('super-stock-threshold-qty').value) || 5, 
+            imageUrl: document.getElementById('super-stock-image-url').value,
+            adminUser: currentUser.username
+        };
+
+        if (!data.itemType || !data.size || !data.category) return showNotification('กรุณากรอกข้อมูลหลักให้ครบ', 'error');
+        showLoadingButton(btn, true);
+        try { 
+            await apiCall('/api/stock', 'POST', data); 
+            onAdminActionSuccess('บันทึกพัสดุสำเร็จ'); 
+            closeModal();
+        } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึกข้อมูล'); }
+    });
+}
+
+// 💡 เปิด Super Modal สำหรับสร้าง หรือ แก้ไข (ล็อคข้อมูล)
+function openSuperStockModal(isEdit = false, item = null) {
+    const modal = document.getElementById('super-stock-modal');
+    if (!modal) return;
+
+    // รวบรวมฟิลด์ที่ต้องล็อค
+    const inputsToLock = [
+        'super-stock-type', 'super-stock-size', 'super-stock-category', 
+        'super-stock-new-qty', 'super-stock-used-qty', 'super-stock-damaged-qty', 
+        'super-stock-threshold-qty'
+    ];
+
+    if (isEdit && item) {
+        // 🔒 โหมดแก้ไข
+        document.getElementById('super-stock-modal-title').innerHTML = '<span class="text-xl">📸</span> อัปเดตรูปภาพพัสดุ';
+        document.getElementById('super-stock-original-type').value = item.itemType;
+        document.getElementById('super-stock-original-size').value = item.size;
+        
+        document.getElementById('super-stock-type').value = item.itemType;
+        document.getElementById('super-stock-size').value = item.size;
+        document.getElementById('super-stock-category').value = item.category || '';
+        document.getElementById('super-stock-image-url').value = item.imageUrl || '';
+        document.getElementById('super-stock-image-preview').src = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
+        
+        document.getElementById('super-stock-new-qty').value = item.newStock || 0;
+        document.getElementById('super-stock-used-qty').value = item.usedStock || 0;
+        document.getElementById('super-stock-damaged-qty').value = item.damagedStock || 0;
+        document.getElementById('super-stock-threshold-qty').value = item.lowStockThreshold || 5;
+
+        // ล็อคฟิลด์ข้อมูล
+        inputsToLock.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.disabled = true;
+                el.classList.add('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+            }
+        });
+
+        // แสดงแจ้งเตือนสีฟ้า
+        let note = document.getElementById('edit-mode-note');
+        if(!note) {
+            note = document.createElement('div');
+            note.id = 'edit-mode-note';
+            note.className = 'col-span-1 md:col-span-2 bg-blue-50 text-blue-700 border border-blue-200 p-3 rounded-lg text-sm font-bold text-center mb-2';
+            note.innerHTML = '🔒 โหมดแก้ไข: อนุญาตให้อัปเดต <span class="text-blue-900 underline">เฉพาะรูปภาพ</span> เท่านั้น (ข้อมูลอื่นถูกล็อค)';
+            
+            const formGrid = document.getElementById('super-stock-modal-body').querySelector('.grid');
+            if (formGrid) formGrid.prepend(note);
+        }
+        if(note) note.style.display = 'block';
+
+    } else {
+        // ➕ โหมดสร้างใหม่
+        document.getElementById('super-stock-modal-title').innerHTML = '<span class="text-xl">➕</span> เพิ่มพัสดุใหม่';
+        document.getElementById('super-stock-original-type').value = '';
+        document.getElementById('super-stock-original-size').value = '';
+        
+        document.getElementById('super-stock-type').value = '';
+        document.getElementById('super-stock-size').value = '';
+        document.getElementById('super-stock-category').value = '';
+        document.getElementById('super-stock-image-url').value = '';
+        document.getElementById('super-stock-image-preview').src = 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
+        
+        document.getElementById('super-stock-new-qty').value = 0;
+        document.getElementById('super-stock-used-qty').value = 0;
+        document.getElementById('super-stock-damaged-qty').value = 0;
+        document.getElementById('super-stock-threshold-qty').value = 5;
+
+        // ปลดล็อกฟิลด์ทั้งหมด
+        inputsToLock.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.disabled = false;
+                el.classList.remove('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+            }
+        });
+
+        // ซ่อนแจ้งเตือนสีฟ้า
+        const note = document.getElementById('edit-mode-note');
+        if (note) note.style.display = 'none';
+    }
+    openModalAnimation(modal);
+}
+
+// 🔑 ระบบ Login / Logout / Change Password
 function checkSession() {
     const storedUser = sessionStorage.getItem('currentUser');
     if (storedUser) { try { onLoginSuccess(JSON.parse(storedUser)); } catch (e) { sessionStorage.removeItem('currentUser'); } }
 }
 
-async function handleLogin() {
+async function handleLogin(e) {
+    if (e && e.type === 'click') e.preventDefault();
     const loginBtn = document.getElementById('login-btn');
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
@@ -473,9 +694,7 @@ function handleLogout() {
     document.getElementById('password').value = '';
 }
 
-// ==========================================
-// 📦 ดึงข้อมูลหลัก (Data Fetching) จาก Backend
-// ==========================================
+// 📦 ดึงข้อมูลหลัก (Data Fetching)
 async function loadInitialData() {
     if (!currentUser) return;
     try {
@@ -511,9 +730,7 @@ async function loadAdminData() {
 
 function refreshData() { loadInitialData(); }
 
-// ==========================================
 // 🔄 รีเฟรชอัตโนมัติ (Polling) สำหรับ Admin
-// ==========================================
 function startPollingForUpdates() {
     if (pollingInterval) clearInterval(pollingInterval); 
     pollingInterval = setInterval(async () => {
@@ -532,10 +749,9 @@ function startPollingForUpdates() {
     }, 15000); 
 }
 
-// ==========================================
 // 🛒 ระบบเบิก - คืน (User Requests Form)
-// ==========================================
-async function handleSubmitRequest() {
+async function handleSubmitRequest(e) {
+    if (e) e.preventDefault();
     const requestBtn = document.getElementById('request-btn');
     const reasonType = document.getElementById('request-reason-type').value;
     showLoadingButton(requestBtn, true);
@@ -572,14 +788,12 @@ function onActionSuccess(message) {
 
 function onAdminActionSuccess(message) {
     showNotification(message, 'success');
-    clearStockForm(); clearUserForm(); resetActionButtons(); refreshData();
+    clearUserForm(); resetActionButtons(); refreshData(); // 💡 ถอด clearStockForm() แบบเก่าออก
 }
 
 function onActionFailure(error) { showNotification(error.message, 'error'); resetActionButtons(); }
 
-// ==========================================
 // 🏢 การแสดงผล (UI Rendering)
-// ==========================================
 function onStockReceived(newStockData) {
     masterStock = newStockData;
     populateTypeDropdown();
@@ -729,9 +943,7 @@ function displayPendingPasswordResets(resets) {
     });
 }
 
-// ==========================================
 // 💡 Admin: New Stock UI & Functions 
-// ==========================================
 function displayStockSummary(stockData) {
     const container = document.getElementById('stock-summary-container');
     if(!container) return;
@@ -745,89 +957,25 @@ function displayStockSummary(stockData) {
     for (const category in groupedByCategory) {
         container.innerHTML += `<h4 class="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 mt-6 pl-1">${category}</h4>`;
         const table = document.createElement('table'); table.className = 'min-w-full divide-y divide-slate-200 mb-4 border bg-white';
-        
-        // อัปเดตหัวตารางใหม่ แสดงช่อง ถูกเบิกไป และ รวมทั้งระบบ
         table.innerHTML = `<thead class="bg-slate-50"><tr><th class="w-16">รูป</th><th>รายการพัสดุ</th><th class="text-center w-64">จำนวนคงเหลือ (ในคลัง)</th><th class="text-center w-48">สถานะภาพรวมระบบ</th><th class="text-center">จัดการสต๊อก (Ledger)</th></tr></thead><tbody class="divide-y divide-slate-100"></tbody>`;
-        
         const tbody = table.querySelector('tbody');
         groupedByCategory[category].forEach(item => {
             const tr = document.createElement('tr'); 
             if (item.newStock <= (item.lowStockThreshold || 5)) tr.classList.add('bg-red-50/50');
-            
             const img = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/80x60/e2e8f0/64748b?text=N/A';
-            
-            // คำนวณยอด
             const dispensed = item.dispensedStock || 0;
             const totalWarehouse = item.newStock + item.usedStock + item.damagedStock;
             const totalSystem = totalWarehouse + dispensed;
 
             tr.innerHTML = `<td class="p-2 text-center"><img src="${img}" class="w-12 h-12 object-cover rounded-lg mx-auto border shadow-sm"></td>
-            <td class="p-3">
-                <p class="font-bold text-slate-800">${item.itemType}</p>
-                <p class="text-xs font-semibold text-slate-500 mt-0.5">Size: <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">${item.size}</span></p>
-            </td>
-            <td class="p-3">
-                <div class="grid grid-cols-3 gap-2 text-center">
-                    <div class="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100 shadow-sm">
-                        <p class="text-[10px] font-bold text-emerald-600 mb-0.5">ใหม่</p>
-                        <p class="text-lg font-black text-emerald-700 leading-none">${item.newStock}</p>
-                    </div>
-                    <div class="bg-blue-50 p-1.5 rounded-lg border border-blue-100 shadow-sm">
-                        <p class="text-[10px] font-bold text-blue-600 mb-0.5">มือสอง</p>
-                        <p class="text-sm font-black text-blue-700 leading-none mt-1">${item.usedStock}</p>
-                    </div>
-                    <div class="bg-rose-50 p-1.5 rounded-lg border border-rose-100 shadow-sm">
-                        <p class="text-[10px] font-bold text-rose-600 mb-0.5">ชำรุด</p>
-                        <p class="text-sm font-black text-rose-700 leading-none mt-1">${item.damagedStock}</p>
-                    </div>
-                </div>
-            </td>
-            <td class="p-3">
-                <div class="flex flex-col gap-1.5 justify-center h-full">
-                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100">
-                        <span>ถูกเบิกไป:</span>
-                        <span class="text-sm">${dispensed} ชิ้น</span>
-                    </div>
-                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-slate-800 text-white rounded-md border border-slate-700 shadow-sm">
-                        <span>รวมทั้งระบบ:</span>
-                        <span class="text-sm text-amber-300">${totalSystem} ชิ้น</span>
-                    </div>
-                </div>
-            </td>
-            <td class="p-3 text-center">
-                <div class="flex gap-1.5 justify-center">
-                    <button class="receive-stock-btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">+ รับเข้า</button>
-                    <button class="adjust-stock-btn bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">✎ ปรับปรุง</button>
-                    <button class="history-stock-btn bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">⏱ ประวัติ</button>
-                </div>
-            </td>`;
+            <td class="p-3"><p class="font-bold text-slate-800">${item.itemType}</p><p class="text-xs font-semibold text-slate-500 mt-0.5">Size: <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">${item.size}</span></p></td>
+            <td class="p-3"><div class="grid grid-cols-3 gap-2 text-center"><div class="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100 shadow-sm"><p class="text-[10px] font-bold text-emerald-600 mb-0.5">ใหม่</p><p class="text-lg font-black text-emerald-700 leading-none">${item.newStock}</p></div><div class="bg-blue-50 p-1.5 rounded-lg border border-blue-100 shadow-sm"><p class="text-[10px] font-bold text-blue-600 mb-0.5">มือสอง</p><p class="text-sm font-black text-blue-700 leading-none mt-1">${item.usedStock}</p></div><div class="bg-rose-50 p-1.5 rounded-lg border border-rose-100 shadow-sm"><p class="text-[10px] font-bold text-rose-600 mb-0.5">ชำรุด</p><p class="text-sm font-black text-rose-700 leading-none mt-1">${item.damagedStock}</p></div></div></td>
+            <td class="p-3"><div class="flex flex-col gap-1.5 justify-center h-full"><div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100"><span>ถูกเบิกไป:</span><span class="text-sm">${dispensed} ชิ้น</span></div><div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-slate-800 text-white rounded-md border border-slate-700 shadow-sm"><span>รวมทั้งระบบ:</span><span class="text-sm text-amber-300">${totalSystem} ชิ้น</span></div></div></td>
+            <td class="p-3 text-center"><div class="grid grid-cols-2 gap-1.5 max-w-[160px] mx-auto"><button class="edit-stock-btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">⚙️ แก้ไขข้อมูล</button><button class="receive-stock-btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">+ รับเข้า</button><button class="adjust-stock-btn bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">✎ ปรับปรุง</button><button class="history-stock-btn bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-id="${item._id}" data-type="${item.itemType}" data-size="${item.size}">⏱ ประวัติ</button></div></td>`;
             tbody.appendChild(tr);
         });
         container.appendChild(table);
     }
-}
-
-async function handleCreateNewStockItem() {
-    const btn = document.getElementById('update-stock-btn');
-    const form = document.getElementById('stock-management-form');
-    const data = {
-        itemType: document.getElementById('stock-type').value.trim(), 
-        size: document.getElementById('stock-size').value.trim(),
-        originalItemType: form.dataset.originalType, // ส่งชื่อเดิมไปบอกหลังบ้าน
-        originalSize: form.dataset.originalSize,     // ส่งไซส์เดิมไปบอกหลังบ้าน
-        category: document.getElementById('stock-category').value.trim(), newStock: parseInt(document.getElementById('stock-new-qty').value) || 0,
-        usedStock: parseInt(document.getElementById('stock-used-qty').value) || 0, damagedStock: parseInt(document.getElementById('stock-damaged-qty').value) || 0,
-        lowStockThreshold: parseInt(document.getElementById('stock-threshold-qty').value) || 5, imageUrl: document.getElementById('stock-image-url').value,
-        adminUser: currentUser.username
-    };
-
-    if (!data.itemType || !data.size || !data.category) return showNotification('กรุณากรอกข้อมูลหลักให้ครบ', 'error');
-    showLoadingButton(btn, true);
-    try { 
-        await apiCall('/api/stock', 'POST', data); 
-        onAdminActionSuccess('บันทึกรายการพัสดุสำเร็จ'); 
-    } 
-    catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึกข้อมูล'); }
 }
 
 function handleStockFilter(clickedButton) {
@@ -838,74 +986,15 @@ function handleStockFilter(clickedButton) {
     displayStockSummary((clickedButton.id === 'stock-filter-low') ? masterStock.filter(item => item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5)) : masterStock);
 }
 
-function populateStockForm(type, size) {
-    const item = masterStock.find(s => s.itemType === type && s.size === size);
-    if (item) {
-        document.getElementById('stock-type').value = item.itemType; 
-        document.getElementById('stock-size').value = item.size;
-        document.getElementById('stock-category').value = item.category || ''; 
-        document.getElementById('stock-image-url').value = item.imageUrl || '';
-        document.getElementById('stock-image-preview').src = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Preview';
-        document.getElementById('stock-new-qty').value = item.newStock || 0; 
-        document.getElementById('stock-used-qty').value = item.usedStock || 0;
-        document.getElementById('stock-damaged-qty').value = item.damagedStock || 0; 
-        document.getElementById('stock-threshold-qty').value = item.lowStockThreshold || 5;
-        
-        // ปลดล็อคให้แก้ชื่อและไซส์ได้
-        document.getElementById('stock-type').disabled = false; 
-        document.getElementById('stock-size').disabled = false;
-        
-        // ซ่อนค่าเก่าไว้เพื่อส่งไปบอกหลังบ้านว่ากำลังแก้ไขรายการไหน
-        const form = document.getElementById('stock-management-form');
-        form.dataset.originalType = item.itemType;
-        form.dataset.originalSize = item.size;
-        
-        toggleStockForm(true);
-    }
-}
+// 💡 ยกเลิกฟังก์ชันแบบเก่าไปเลย
+function populateStockForm() {}
+function clearStockForm() {}
+function handleCreateNewStockItem() {}
+async function handleImageUpload(event) {}
 
-function clearStockForm() {
-    const form = document.getElementById('stock-management-form');
-    if (form) {
-        form.reset();
-        // ล้าง Dataset ด้วยเพื่อไม่ให้สับสนกับตอนที่กดสร้างใหม่
-        delete form.dataset.originalType;
-        delete form.dataset.originalSize;
-    }
-    if(document.getElementById('stock-type')) document.getElementById('stock-type').disabled = false;
-    if(document.getElementById('stock-size')) document.getElementById('stock-size').disabled = false;
-    const preview = document.getElementById('stock-image-preview'); if(preview) preview.src = 'https://placehold.co/128x128/e2e8f0/64748b?text=Preview';
-}
-
-// 💡 อัปโหลดไฟล์รูปภาพด้วย Multer
-async function handleImageUpload(event) {
-    const file = event.target.files[0];
-    if (file) {
-        const preview = document.getElementById('stock-image-preview');
-        preview.src = URL.createObjectURL(file); // แสดงรูปพรีวิวให้เห็นก่อน
-        
-        const formData = new FormData();
-        formData.append('image', file);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/upload`, { method: 'POST', body: formData });
-            const text = await response.text(); // อ่านผลลัพธ์เป็น Text ก่อนเพื่อป้องกันเว็บค้าง
-            try {
-                const result = JSON.parse(text);
-                if(result.imageUrl) {
-                    document.getElementById('stock-image-url').value = result.imageUrl; 
-                    showNotification('อัปโหลดรูปภาพสำเร็จ', 'success');
-                } else {
-                    throw new Error(result.error || 'อัปโหลดรูปภาพไม่สำเร็จ');
-                }
-            } catch(err) {
-                console.error("Server Error:", text);
-                throw new Error('เซิร์ฟเวอร์ขัดข้อง (Server Error)');
-            }
-        } catch(e) { showNotification(e.message, 'error'); }
-    }
-}
-
-// 💡 นำเข้าผู้ใช้งานด้วย CSV
+// ==========================================
+// 🧑‍💻 การจัดการผู้ใช้งาน (Users Management)
+// ==========================================
 async function handleImportUsersCSV() {
     const fileInput = document.getElementById('csv-file-input');
     const file = fileInput.files[0];
@@ -933,9 +1022,6 @@ async function handleImportUsersCSV() {
     finally { showLoadingButton(btn, false, 'นำเข้าข้อมูล (Import)'); fileInput.value = ''; }
 }
 
-// ==========================================
-// 🧑‍💻 การจัดการผู้ใช้งาน (Users Management)
-// ==========================================
 function onUsersReceived(users) { allUsersData = users; renderUsersTable(); }
 
 function renderUsersTable() {
@@ -962,7 +1048,9 @@ function renderUsersTable() {
 function handleUserSearch() { currentUserPage = 1; renderUsersTable(); }
 function changeUserPage(dir) { currentUserPage += dir; renderUsersTable(); }
 
-async function handleSaveUser() {
+async function handleSaveUser(e) {
+    if(e) e.preventDefault(); // ป้องกันหน้าเว็บรีเฟรช
+    const btn = document.getElementById('save-user-btn');
     const userData = { 
         name: document.getElementById('user-form-name').value.trim(), 
         department: document.getElementById('user-form-department').value.trim(), 
@@ -973,16 +1061,14 @@ async function handleSaveUser() {
     };
     
     if (!userData.name || !userData.username || !userData.password) return showNotification('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
-    showLoadingButton(document.getElementById('save-user-btn'), true);
+    showLoadingButton(btn, true);
     
     try { 
-        const form = document.getElementById('user-management-form');
-        const originalUsername = form.dataset.originalUsername;
-        
+        const originalUsername = currentEditUser || null; 
         await apiCall('/api/users', 'POST', { userData, adminUser: currentUser.username, originalUsername }); 
         onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); 
     } 
-    catch(err) { onActionFailure(err); showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); }
+    catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
 }
 
 function populateUserForm(username) {
@@ -995,22 +1081,23 @@ function populateUserForm(username) {
         document.getElementById('user-form-role').value = user.role || 'user'; 
         document.getElementById('user-form-status').value = user.status || 'active';
         
-        // ปลดล็อกให้แก้ Username ได้แล้ว
         document.getElementById('user-form-username').disabled = false; 
-        
-        const form = document.getElementById('user-management-form');
-        form.dataset.originalUsername = user.username;
-        
+        currentEditUser = user.username;
         toggleUserForm(true);
     }
 }
 
 function clearUserForm() { 
     const form = document.getElementById('user-management-form');
-    if (form) {
+    if (form && typeof form.reset === 'function') {
         form.reset();
-        delete form.dataset.originalUsername;
+    } else {
+        ['user-form-name', 'user-form-department', 'user-form-username', 'user-form-password'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.value = '';
+        });
     }
+    currentEditUser = null;
     if(document.getElementById('user-form-username')) document.getElementById('user-form-username').disabled = false; 
 }
 
@@ -1094,7 +1181,7 @@ function showLoadingButton(button, isLoading, originalText = '') {
 }
 
 function resetActionButtons() {
-    showLoadingButton(document.getElementById('request-btn'), false); showLoadingButton(document.getElementById('update-stock-btn'), false, 'บันทึกข้อมูล'); showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); document.querySelectorAll('button:disabled').forEach(btn => showLoadingButton(btn, false)); toggleRequestForm();
+    showLoadingButton(document.getElementById('request-btn'), false); showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); document.querySelectorAll('button:disabled').forEach(btn => showLoadingButton(btn, false)); toggleRequestForm();
 }
 
 function openModalAnimation(modal) { if (!modal) return; modal.classList.remove('hidden'); setTimeout(() => { modal.classList.remove('opacity-0'); const c = modal.querySelector('.modal-container'); if (c) c.classList.remove('scale-95'); }, 10); }
