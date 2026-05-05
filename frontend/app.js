@@ -15,7 +15,10 @@ const AppState = {
     pagination: { history: 1, logs: 1, users: 1, rowsPerPage: 10 },
     pollingInterval: null,
     currentEditUser: null,
-    currentEditStock: null
+    currentEditStock: null,
+    stockFilterMode: 'ALL', 
+    stockSearchTerm: '',
+    activeStockCategory: null // สถานะเก็บว่าตอนนี้กำลังคลิกดู "หมวดหมู่" ไหนอยู่
 };
 
 // ==========================================
@@ -24,7 +27,7 @@ const AppState = {
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
     injectSuperStockModal(); // สร้างหน้าต่าง Modal ใหม่สำหรับจัดการสต๊อก
-    setupStaticEventListeners(); // 💡 ผูกปุ่มคลิกต่างๆ (ฟังก์ชันนี้สำคัญมาก)
+    setupStaticEventListeners(); // ผูกปุ่มคลิกต่างๆ 
 });
 
 // ==========================================
@@ -504,14 +507,54 @@ async function handleProcessReturn(btn) {
 
 
 // ==========================================
-// 🏢 8. ADMIN: STOCK MANAGEMENT
+// 🏢 8. ADMIN: STOCK MANAGEMENT (SIDEBAR & MAIN CONTENT)
 // ==========================================
+function initStockSearchUI() {
+    const container = document.getElementById('stock-summary-container');
+    if (container && !document.getElementById('stock-search-wrapper')) {
+        const searchWrapper = document.createElement('div');
+        searchWrapper.id = 'stock-search-wrapper';
+        searchWrapper.className = 'mb-6 relative z-10';
+        searchWrapper.innerHTML = `
+            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <span class="text-xl opacity-60">🔍</span>
+            </div>
+            <input type="text" id="stock-search-input" placeholder="ค้นหาชื่อพัสดุ, ไซส์ หรือ หมวดหมู่..." class="w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all text-slate-700 font-bold text-sm bg-white hover:border-indigo-300">
+        `;
+        container.parentNode.insertBefore(searchWrapper, container);
+
+        document.getElementById('stock-search-input').addEventListener('input', (e) => {
+            AppState.stockSearchTerm = e.target.value.toLowerCase();
+            applyStockFilters();
+        });
+    }
+}
+
+function applyStockFilters() {
+    let filtered = AppState.masterStock;
+
+    if (AppState.stockFilterMode === 'LOW') {
+        filtered = filtered.filter(item => item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5));
+    }
+
+    if (AppState.stockSearchTerm) {
+        const term = AppState.stockSearchTerm;
+        filtered = filtered.filter(item => 
+            item.itemType.toLowerCase().includes(term) ||
+            item.size.toLowerCase().includes(term) ||
+            (item.category && item.category.toLowerCase().includes(term))
+        );
+    }
+
+    displayStockSummary(filtered);
+}
+
 function onStockReceived(newStockData) {
     AppState.masterStock = newStockData;
     populateTypeDropdown();
     if (AppState.currentUser && AppState.currentUser.role === 'admin') {
-        const activeFilter = document.querySelector('.stock-filter-btn.bg-indigo-600');
-        if(activeFilter) handleStockFilter(activeFilter); else displayStockSummary(AppState.masterStock);
+        initStockSearchUI(); 
+        applyStockFilters(); 
         updateLowStockAlerts();
     }
 }
@@ -520,66 +563,256 @@ function displayStockSummary(stockData) {
     const container = document.getElementById('stock-summary-container');
     if(!container) return;
     container.innerHTML = '';
-    if (!stockData || stockData.length === 0) return container.innerHTML = '<p class="text-center p-4 text-gray-500">ไม่พบข้อมูลสต็อก</p>';
+    
+    if (!stockData || stockData.length === 0) {
+        container.innerHTML = '<div class="text-center p-12 bg-white rounded-2xl border border-slate-200"><p class="text-slate-500 font-medium text-lg">ไม่พบพัสดุที่ค้นหาในระบบ</p></div>';
+        
+        // ถ้าไม่เจอพัสดุ ให้ล้างเมนูย่อยด้วย
+        const submenu = document.getElementById('stock-category-submenu');
+        if (submenu) submenu.innerHTML = '';
+        return;
+    }
 
+    // 💡 จัดกลุ่มตาม "หมวดหมู่ (category)" 
     const groupedByCategory = stockData.reduce((acc, item) => {
-        const cat = item.category || 'Uncategorized'; 
-        if (!acc[cat]) acc[cat] = []; 
-        acc[cat].push(item); 
+        const cat = item.category || 'หมวดหมู่ทั่วไป';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
         return acc;
     }, {});
 
-    for (const category in groupedByCategory) {
-        container.innerHTML += `<h4 class="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 mt-6 pl-1">${category}</h4>`;
-        const table = document.createElement('table'); 
-        table.className = 'min-w-full divide-y divide-slate-200 mb-4 border bg-white';
-        table.innerHTML = `<thead class="bg-slate-50"><tr><th class="w-16">รูป</th><th>รายการพัสดุ</th><th class="text-center w-64">จำนวนคงเหลือ (ในคลัง)</th><th class="text-center w-48">สถานะภาพรวมระบบ</th><th class="text-center">จัดการสต๊อก (Ledger)</th></tr></thead><tbody class="divide-y divide-slate-100"></tbody>`;
+    const categories = Object.keys(groupedByCategory);
+
+    if (!AppState.activeStockCategory || !categories.includes(AppState.activeStockCategory)) {
+        AppState.activeStockCategory = categories[0];
+    }
+
+    // ------------------------------------------
+    // ⬅️ สร้างเมนูย่อยของหมวดหมู่ (ฝังอยู่ใน Sidebar เมนูหลัก)
+    // ------------------------------------------
+    let submenu = document.getElementById('stock-category-submenu');
+    if (!submenu) {
+        submenu = document.createElement('div');
+        submenu.id = 'stock-category-submenu';
+        submenu.className = 'flex flex-col space-y-1 pl-4 mt-1 mb-2 border-l-2 border-indigo-100 ml-6 hidden transition-all duration-300';
         
+        // นำไปแทรกต่อจากปุ่ม "#tab-stock" ในเมนูหลัก
+        const tabStock = document.getElementById('tab-stock');
+        if (tabStock) {
+            tabStock.parentNode.insertBefore(submenu, tabStock.nextSibling);
+        }
+    }
+
+    submenu.innerHTML = '';
+    categories.forEach(cat => {
+        const isActive = cat === AppState.activeStockCategory;
+        const itemsInCat = groupedByCategory[cat];
+        const hasAlert = itemsInCat.some(i => i.newStock <= (i.lowStockThreshold || 5));
+        const alertDot = hasAlert ? '<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-sm"></span>' : '';
+
+        const btn = document.createElement('button');
+        btn.className = `text-left px-4 py-2.5 text-xs font-bold transition-all rounded-lg flex items-center justify-between ${isActive ? 'bg-indigo-100 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`;
+        btn.innerHTML = `<span class="truncate pr-2">${cat} <span class="text-[10px] opacity-60 ml-1">(${itemsInCat.length})</span></span> ${alertDot}`;
+        
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            AppState.activeStockCategory = cat;
+            applyStockFilters(); // สั่งเรนเดอร์เนื้อหาใหม่
+        };
+        submenu.appendChild(btn);
+    });
+
+    // เช็คว่าถ้าแท็บจัดการสต๊อกกำลังเปิดอยู่ ให้แสดงซับเมนู
+    const tabStock = document.getElementById('tab-stock');
+    if (tabStock && tabStock.classList.contains('text-indigo-600')) {
+        submenu.classList.remove('hidden');
+    } else {
+        submenu.classList.add('hidden');
+    }
+
+
+    // ------------------------------------------
+    // ➡️ ฝั่งขวา: ตารางแสดงรายละเอียดแบบเต็มจอ
+    // ------------------------------------------
+    const contentArea = document.createElement('div');
+    contentArea.className = 'w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-w-0';
+
+    const activeItems = groupedByCategory[AppState.activeStockCategory];
+    
+    // คำนวณยอดรวมของหมวดหมู่นี้
+    let totalN = 0, totalU = 0, totalD = 0;
+    activeItems.forEach(i => { totalN += i.newStock; totalU += i.usedStock; totalD += i.damagedStock; });
+
+    // หัวข้อหลัก (สรุปยอดรวมหมวดหมู่)
+    const contentHeader = document.createElement('div');
+    contentHeader.className = 'p-6 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between';
+    contentHeader.innerHTML = `
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-xl border border-slate-200 shadow-sm bg-white flex items-center justify-center text-2xl text-indigo-500">📁</div>
+            <div>
+                <h2 class="text-2xl font-black text-slate-800">${AppState.activeStockCategory}</h2>
+                <p class="text-xs text-slate-500 mt-1.5 font-medium">รวมพัสดุในหมวดหมู่นี้: <span class="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">${activeItems.length} รายการ</span></p>
+            </div>
+        </div>
+        <div class="flex gap-4 text-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto justify-center">
+            <div class="flex flex-col px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ใหม่รวม</span><span class="text-lg font-black text-emerald-600 leading-none">${totalN}</span></div>
+            <div class="flex flex-col px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">มือสองรวม</span><span class="text-lg font-black text-blue-600 leading-none">${totalU}</span></div>
+            <div class="flex flex-col px-4"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ชำรุดรวม</span><span class="text-lg font-black text-rose-600 leading-none">${totalD}</span></div>
+        </div>
+    `;
+    contentArea.appendChild(contentHeader);
+
+    // คอนเทนเนอร์รวมพัสดุย่อย
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'p-6 bg-slate-50/50 space-y-6';
+
+    // จัดกลุ่มพัสดุตามชื่อพัสดุ (itemType) ภายในหมวดหมู่นั้นๆ
+    const groupedByItemType = activeItems.reduce((acc, item) => {
+        const type = item.itemType || 'ไม่ระบุชื่อรายการ';
+        if (!acc[type]) acc[type] = [];
+        acc[type].push(item);
+        return acc;
+    }, {});
+
+    for (const typeName in groupedByItemType) {
+        const itemsOfType = groupedByItemType[typeName];
+        const typeId = 'type-' + typeName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '') + Math.floor(Math.random()*1000);
+        const img = itemsOfType[0]?.imageUrl ? (API_BASE_URL + itemsOfType[0].imageUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
+        const hasLowStock = itemsOfType.some(i => i.newStock <= (i.lowStockThreshold || 5));
+
+        const typeWrapper = document.createElement('div');
+        typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${hasLowStock ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
+
+        // ส่วนหัว (Accordion Header) ที่แสดงชื่อพัสดุ
+        const typeHeader = document.createElement('div');
+        typeHeader.className = 'flex items-center justify-between cursor-pointer p-4 hover:bg-slate-50 transition-colors select-none border-b border-slate-100';
+        typeHeader.innerHTML = `
+            <div class="flex items-center gap-4">
+                <img src="${img}" class="w-12 h-12 rounded-lg object-cover border border-slate-200 shadow-sm bg-white">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h4 class="text-base font-bold text-slate-800">${typeName}</h4>
+                        ${hasLowStock ? '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 animate-pulse border border-red-200">สต๊อกต่ำ</span>' : ''}
+                    </div>
+                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold mt-1 inline-block">${itemsOfType.length} ขนาดไซส์</span>
+                </div>
+            </div>
+            <div class="text-slate-400 p-2 rounded-full hover:bg-slate-100 transition-colors">
+                <svg class="w-5 h-5 transform transition-transform duration-300 rotate-180" id="icon-${typeId}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+        `;
+
+        // ตารางไซส์
+        const typeTableContainer = document.createElement('div');
+        typeTableContainer.className = 'overflow-x-auto transition-all duration-300 origin-top';
+        typeTableContainer.id = `table-${typeId}`;
+
+        // ฟังก์ชันคลิกย่อ-ขยาย (Accordion ของชื่อพัสดุ)
+        typeHeader.addEventListener('click', () => {
+            const isHidden = typeTableContainer.classList.contains('hidden');
+            if (isHidden) {
+                typeTableContainer.classList.remove('hidden');
+                document.getElementById(`icon-${typeId}`).classList.add('rotate-180');
+            } else {
+                typeTableContainer.classList.add('hidden');
+                document.getElementById(`icon-${typeId}`).classList.remove('rotate-180');
+            }
+        });
+
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-slate-100';
+        table.innerHTML = `
+            <thead class="bg-slate-50/80">
+                <tr>
+                    <th class="px-6 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-1/4">ไซส์ / ขนาด</th>
+                    <th class="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">คงเหลือ (ใหม่ / มือสอง / ชำรุด)</th>
+                    <th class="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">สถิติระบบ</th>
+                    <th class="px-6 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">จัดการสต๊อก</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-slate-50"></tbody>
+        `;
+
         const tbody = table.querySelector('tbody');
-        groupedByCategory[category].forEach(item => {
-            const tr = document.createElement('tr'); 
-            if (item.newStock <= (item.lowStockThreshold || 5)) tr.classList.add('bg-red-50/50');
-            
-            const img = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/80x60/e2e8f0/64748b?text=N/A';
+
+        itemsOfType.forEach(item => {
+            const isLow = item.newStock <= (item.lowStockThreshold || 5);
             const dispensed = item.dispensedStock || 0;
             const totalSystem = item.newStock + item.usedStock + item.damagedStock + dispensed;
-
+            
+            const tr = document.createElement('tr');
+            tr.className = `hover:bg-slate-50 transition-colors ${isLow ? 'bg-red-50/20' : ''}`;
             tr.innerHTML = `
-            <td class="p-2 text-center"><img src="${img}" class="w-12 h-12 object-cover rounded-lg mx-auto border shadow-sm"></td>
-            <td class="p-3"><p class="font-bold text-slate-800">${item.itemType}</p><p class="text-xs font-semibold text-slate-500 mt-0.5">Size: <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">${item.size}</span></p></td>
-            <td class="p-3">
-                <div class="grid grid-cols-3 gap-2 text-center">
-                    <div class="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100 shadow-sm"><p class="text-[10px] font-bold text-emerald-600 mb-0.5">ใหม่</p><p class="text-lg font-black text-emerald-700 leading-none">${item.newStock}</p></div>
-                    <div class="bg-blue-50 p-1.5 rounded-lg border border-blue-100 shadow-sm"><p class="text-[10px] font-bold text-blue-600 mb-0.5">มือสอง</p><p class="text-sm font-black text-blue-700 leading-none mt-1">${item.usedStock}</p></div>
-                    <div class="bg-rose-50 p-1.5 rounded-lg border border-rose-100 shadow-sm"><p class="text-[10px] font-bold text-rose-600 mb-0.5">ชำรุด</p><p class="text-sm font-black text-rose-700 leading-none mt-1">${item.damagedStock}</p></div>
-                </div>
-            </td>
-            <td class="p-3">
-                <div class="flex flex-col gap-1.5 justify-center h-full">
-                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100"><span>ถูกเบิกไป:</span><span class="text-sm">${dispensed} ชิ้น</span></div>
-                    <div class="flex justify-between items-center text-[11px] font-bold px-2 py-1.5 bg-slate-800 text-white rounded-md border border-slate-700 shadow-sm"><span>รวมทั้งระบบ:</span><span class="text-sm text-amber-300">${totalSystem} ชิ้น</span></div>
-                </div>
-            </td>
-            <td class="p-3 text-center">
-                <div class="grid grid-cols-2 gap-1.5 max-w-[160px] mx-auto">
-                    <button class="edit-stock-btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">⚙️ แก้ไขข้อมูล</button>
-                    <button class="receive-stock-btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">+ รับเข้า</button>
-                    <button class="adjust-stock-btn bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">✎ ปรับปรุง</button>
-                    <button class="history-stock-btn bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-[10px] font-bold py-1.5 px-2 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">⏱ ประวัติ</button>
-                </div>
-            </td>`;
+                <td class="px-6 py-3 whitespace-nowrap">
+                    <span class="font-bold text-slate-700 text-[14px]">ไซส์ ${item.size}</span>
+                    ${isLow ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">ใกล้หมด</span>' : ''}
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex justify-center gap-1.5">
+                        <div class="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded text-emerald-700 border border-emerald-100 min-w-[3rem] justify-center" title="ของใหม่">
+                            <span class="text-xs font-black">${item.newStock}</span>
+                        </div>
+                        <div class="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded text-blue-700 border border-blue-100 min-w-[3rem] justify-center" title="มือสอง">
+                            <span class="text-xs font-black">${item.usedStock}</span>
+                        </div>
+                        <div class="flex items-center gap-1 bg-rose-50 px-2 py-1 rounded text-rose-700 border border-rose-100 min-w-[3rem] justify-center" title="ชำรุด">
+                            <span class="text-xs font-black">${item.damagedStock}</span>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <div class="flex flex-col items-center gap-1">
+                        <div class="text-[9px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-full max-w-[110px] flex justify-between">
+                            <span>เบิกไป:</span> <span class="font-bold text-indigo-600">${dispensed}</span>
+                        </div>
+                        <div class="text-[9px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-full max-w-[110px] flex justify-between">
+                            <span>รวม:</span> <span class="font-bold text-slate-800">${totalSystem}</span>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-6 py-3 text-right whitespace-nowrap">
+                    <div class="flex items-center justify-end gap-1.5">
+                        <button title="รับเข้าสต๊อก" class="receive-stock-btn p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 border border-emerald-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"></path></svg>
+                        </button>
+                        <button title="ปรับยอด" class="adjust-stock-btn p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-700 border border-amber-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                        </button>
+                        <button title="อัปเดตรูป/แจ้งเตือน" class="edit-stock-btn p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        </button>
+                        <button title="ประวัติ" class="history-stock-btn p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            `;
             tbody.appendChild(tr);
         });
-        container.appendChild(table);
+
+        typeTableContainer.appendChild(table);
+        typeWrapper.appendChild(typeHeader);
+        typeWrapper.appendChild(typeTableContainer);
+        itemsContainer.appendChild(typeWrapper);
     }
+
+    contentArea.appendChild(itemsContainer);
+    
+    // ดันส่วนเนื้อหาเข้าสู่คอนเทนเนอร์หลัก (ไม่สร้าง Sidebar ซ้ายแล้ว เพราะเราย้ายไปฝังในเมนูหลักแล้ว)
+    container.appendChild(contentArea);
 }
 
 function handleStockFilter(clickedButton) {
     document.querySelectorAll('.stock-filter-btn').forEach(btn => {
-        btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md', 'shadow-indigo-200'); btn.classList.add('bg-white', 'text-slate-600', 'hover:bg-slate-50');
+        btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md', 'shadow-indigo-200'); 
+        btn.classList.add('bg-white', 'text-slate-600', 'hover:bg-slate-50');
     });
-    clickedButton.classList.add('bg-indigo-600', 'text-white', 'shadow-md', 'shadow-indigo-200'); clickedButton.classList.remove('bg-white', 'text-slate-600', 'hover:bg-slate-50');
-    displayStockSummary((clickedButton.id === 'stock-filter-low') ? AppState.masterStock.filter(item => item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5)) : AppState.masterStock);
+    clickedButton.classList.add('bg-indigo-600', 'text-white', 'shadow-md', 'shadow-indigo-200'); 
+    clickedButton.classList.remove('bg-white', 'text-slate-600', 'hover:bg-slate-50');
+    
+    AppState.stockFilterMode = clickedButton.id === 'stock-filter-low' ? 'LOW' : 'ALL';
+    applyStockFilters();
 }
 
 function updateLowStockAlerts() {
@@ -723,7 +956,7 @@ function openSuperStockModal(isEdit = false, item = null) {
     const inputsToLock = [ 'super-stock-type', 'super-stock-size', 'super-stock-category', 'super-stock-new-qty', 'super-stock-used-qty', 'super-stock-damaged-qty' ];
 
     if (isEdit && item) {
-        document.getElementById('super-stock-modal-title').innerHTML = '<span class="text-xl">📸</span> อัปเดตรูปภาพพัสดุ';
+        document.getElementById('super-stock-modal-title').innerHTML = '<span class="text-xl">📸</span> อัปเดตรูปภาพและแจ้งเตือน';
         document.getElementById('super-stock-original-type').value = item.itemType;
         document.getElementById('super-stock-original-size').value = item.size;
         
@@ -1019,36 +1252,40 @@ function setupStaticEventListeners() {
                 } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'อนุมัติ / ตั้งรหัสใหม่'); }
             });
         }
-        else if (e.target.matches('.approve-btn')) handleApproveRequest(e.target);
-        else if (e.target.matches('.reject-btn')) handleRejectRequest(e.target);
-        else if (e.target.matches('.process-return-btn')) handleProcessReturn(e.target);
-        else if (e.target.matches('.reject-return-btn')) {
+        else if (e.target.matches('.approve-btn') || e.target.closest('.approve-btn')) handleApproveRequest(e.target.closest('.approve-btn') || e.target);
+        else if (e.target.matches('.reject-btn') || e.target.closest('.reject-btn')) handleRejectRequest(e.target.closest('.reject-btn') || e.target);
+        else if (e.target.matches('.process-return-btn') || e.target.closest('.process-return-btn')) handleProcessReturn(e.target.closest('.process-return-btn') || e.target);
+        else if (e.target.matches('.reject-return-btn') || e.target.closest('.reject-return-btn')) {
+            const btn = e.target.closest('.reject-return-btn') || e.target;
             showPromptModal("เหตุผลที่ปฏิเสธการคืน:", async (reason) => {
-                showLoadingButton(e.target, true);
+                showLoadingButton(btn, true);
                 try {
-                    await apiCall('/api/admin/reject', 'POST', { requestId: e.target.dataset.id, reason, adminUser: AppState.currentUser.username });
+                    await apiCall('/api/admin/reject', 'POST', { requestId: btn.dataset.id, reason, adminUser: AppState.currentUser.username });
                     onAdminActionSuccess('ปฏิเสธการคืนสำเร็จ');
-                } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'ปฏิเสธ'); }
+                } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'ปฏิเสธ'); }
             });
         }
-        else if (e.target.matches('.edit-stock-btn')) {
-            const item = AppState.masterStock.find(s => s.itemType === e.target.dataset.type && s.size === e.target.dataset.size);
+        else if (e.target.matches('.edit-stock-btn') || e.target.closest('.edit-stock-btn')) {
+            const btn = e.target.closest('.edit-stock-btn') || e.target;
+            const item = AppState.masterStock.find(s => s.itemType === btn.dataset.type && s.size === btn.dataset.size);
             if (item) openSuperStockModal(true, item);
         }
-        else if (e.target.matches('.receive-stock-btn')) {
-            const type = e.target.dataset.type; const size = e.target.dataset.size;
+        else if (e.target.matches('.receive-stock-btn') || e.target.closest('.receive-stock-btn')) {
+            const btn = e.target.closest('.receive-stock-btn') || e.target;
+            const type = btn.dataset.type; const size = btn.dataset.size;
             showPromptModal(`รับของเข้า: ${type} (${size})\nระบุจำนวน (ชิ้น):`, async (qty) => {
                 const num = parseInt(qty);
                 if (isNaN(num) || num <= 0) return showNotification('ระบุตัวเลขให้ถูกต้อง', 'error');
-                showLoadingButton(e.target, true);
+                showLoadingButton(btn, true);
                 try {
                     await apiCall('/api/stock/transaction', 'POST', { itemType: type, size, transactionType: 'IN', quantity: num, reason: 'รับเข้าใหม่', adminUser: AppState.currentUser.username });
                     onAdminActionSuccess(`รับเข้าสำเร็จ`);
-                } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, '+ รับเข้า'); }
+                } catch(err) { onActionFailure(err); showLoadingButton(btn, false, '+ รับเข้า'); }
             });
         }
-        else if (e.target.matches('.adjust-stock-btn')) {
-            const item = AppState.masterStock.find(s => s.itemType === e.target.dataset.type && s.size === e.target.dataset.size);
+        else if (e.target.matches('.adjust-stock-btn') || e.target.closest('.adjust-stock-btn')) {
+            const btn = e.target.closest('.adjust-stock-btn') || e.target;
+            const item = AppState.masterStock.find(s => s.itemType === btn.dataset.type && s.size === btn.dataset.size);
             if(!item) return;
             document.getElementById('adjust-target-id').value = `${item.itemType}|${item.size}`;
             document.getElementById('adjust-item-name').textContent = item.itemType;
@@ -1081,8 +1318,9 @@ function setupStaticEventListeners() {
                 closeModalAnimation(document.getElementById('advanced-adjust-modal'));
             } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
         }
-        else if (e.target.matches('.history-stock-btn')) {
-            const type = e.target.dataset.type; const size = e.target.dataset.size;
+        else if (e.target.matches('.history-stock-btn') || e.target.closest('.history-stock-btn')) {
+            const btn = e.target.closest('.history-stock-btn') || e.target;
+            const type = btn.dataset.type; const size = btn.dataset.size;
             document.getElementById('export-stock-history-btn').dataset.type = type;
             document.getElementById('export-stock-history-btn').dataset.size = size;
             document.getElementById('stock-history-modal-title').textContent = `ความเคลื่อนไหวสต๊อก: ${type} (${size})`;
@@ -1260,7 +1498,21 @@ function handleTabClick(tabName) {
     document.querySelectorAll('.admin-tab-content').forEach(content => content.classList.add('hidden'));
     document.querySelectorAll('.admin-tab').forEach(tab => { tab.classList.remove('bg-indigo-50', 'border-indigo-500', 'text-indigo-600'); tab.classList.add('border-transparent', 'text-slate-500'); });
     document.getElementById(`content-${tabName}`)?.classList.remove('hidden');
-    const btn = document.getElementById(`tab-${tabName}`); if(btn) { btn.classList.add('bg-indigo-50', 'border-indigo-500', 'text-indigo-600'); btn.classList.remove('border-transparent', 'text-slate-500'); }
+    const btn = document.getElementById(`tab-${tabName}`); 
+    if(btn) { 
+        btn.classList.add('bg-indigo-50', 'border-indigo-500', 'text-indigo-600'); 
+        btn.classList.remove('border-transparent', 'text-slate-500'); 
+    }
+
+    // ซ่อน/แสดง เมนูย่อยของหมวดหมู่สต๊อกเมื่อเปลี่ยนแท็บ
+    const submenu = document.getElementById('stock-category-submenu');
+    if (submenu) {
+        if (tabName === 'stock') {
+            submenu.classList.remove('hidden');
+        } else {
+            submenu.classList.add('hidden');
+        }
+    }
 }
 
 function showForgotPasswordView(e) { e?.preventDefault(); document.getElementById('login-view')?.classList.add('hidden'); document.getElementById('forgot-password-view')?.classList.remove('hidden'); }
