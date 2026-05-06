@@ -514,18 +514,30 @@ function initStockSearchUI() {
     if (container && !document.getElementById('stock-search-wrapper')) {
         const searchWrapper = document.createElement('div');
         searchWrapper.id = 'stock-search-wrapper';
-        searchWrapper.className = 'mb-6 relative z-10';
+        // 💡 แก้ให้กล่องค้นหาและปุ่มเพิ่มพัสดุอยู่บรรทัดเดียวกันเพื่อประหยัดพื้นที่
+        searchWrapper.className = 'mb-6 flex flex-col sm:flex-row gap-4 items-center relative z-10';
         searchWrapper.innerHTML = `
-            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <span class="text-xl opacity-60">🔍</span>
+            <div class="relative w-full flex-1">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <span class="text-xl opacity-60">🔍</span>
+                </div>
+                <input type="text" id="stock-search-input" placeholder="ค้นหาชื่อพัสดุ, ไซส์ หรือ หมวดหมู่..." class="w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all text-slate-700 font-bold text-sm bg-white hover:border-indigo-300">
             </div>
-            <input type="text" id="stock-search-input" placeholder="ค้นหาชื่อพัสดุ, ไซส์ หรือ หมวดหมู่..." class="w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all text-slate-700 font-bold text-sm bg-white hover:border-indigo-300">
+            <button id="compact-add-stock-btn" class="w-full sm:w-auto shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3.5 rounded-xl font-bold shadow-md shadow-indigo-200 transition-all flex items-center justify-center gap-2 text-sm border border-indigo-600">
+                <span class="text-lg leading-none">➕</span> เพิ่มพัสดุใหม่
+            </button>
         `;
         container.parentNode.insertBefore(searchWrapper, container);
 
         document.getElementById('stock-search-input').addEventListener('input', (e) => {
             AppState.stockSearchTerm = e.target.value.toLowerCase();
             applyStockFilters();
+        });
+
+        // 💡 ปุ่มแบบกะทัดรัด (Compact) สั่งให้เปิด Modal แบบเพิ่มของใหม่
+        document.getElementById('compact-add-stock-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            openSuperStockModal(false);
         });
     }
 }
@@ -567,13 +579,11 @@ function displayStockSummary(stockData) {
     if (!stockData || stockData.length === 0) {
         container.innerHTML = '<div class="text-center p-12 bg-white rounded-2xl border border-slate-200"><p class="text-slate-500 font-medium text-lg">ไม่พบพัสดุที่ค้นหาในระบบ</p></div>';
         
-        // ถ้าไม่เจอพัสดุ ให้ล้างเมนูย่อยด้วย
         const submenu = document.getElementById('stock-category-submenu');
         if (submenu) submenu.innerHTML = '';
         return;
     }
 
-    // 💡 จัดกลุ่มตาม "หมวดหมู่ (category)" 
     const groupedByCategory = stockData.reduce((acc, item) => {
         const cat = item.category || 'หมวดหมู่ทั่วไป';
         if (!acc[cat]) acc[cat] = [];
@@ -596,7 +606,6 @@ function displayStockSummary(stockData) {
         submenu.id = 'stock-category-submenu';
         submenu.className = 'flex flex-col space-y-1 pl-4 mt-1 mb-2 border-l-2 border-indigo-100 ml-6 hidden transition-all duration-300';
         
-        // นำไปแทรกต่อจากปุ่ม "#tab-stock" ในเมนูหลัก
         const tabStock = document.getElementById('tab-stock');
         if (tabStock) {
             tabStock.parentNode.insertBefore(submenu, tabStock.nextSibling);
@@ -618,12 +627,11 @@ function displayStockSummary(stockData) {
             e.preventDefault();
             e.stopPropagation();
             AppState.activeStockCategory = cat;
-            applyStockFilters(); // สั่งเรนเดอร์เนื้อหาใหม่
+            applyStockFilters(); 
         };
         submenu.appendChild(btn);
     });
 
-    // เช็คว่าถ้าแท็บจัดการสต๊อกกำลังเปิดอยู่ ให้แสดงซับเมนู
     const tabStock = document.getElementById('tab-stock');
     if (tabStock && tabStock.classList.contains('text-indigo-600')) {
         submenu.classList.remove('hidden');
@@ -640,13 +648,16 @@ function displayStockSummary(stockData) {
 
     const activeItems = groupedByCategory[AppState.activeStockCategory];
     
-    // คำนวณยอดรวมของหมวดหมู่นี้
-    let totalN = 0, totalU = 0, totalD = 0;
-    activeItems.forEach(i => { totalN += i.newStock; totalU += i.usedStock; totalD += i.damagedStock; });
+    let totalN = 0, totalU = 0, totalD = 0, totalDispensed = 0;
+    activeItems.forEach(i => { 
+        totalN += i.newStock; 
+        totalU += i.usedStock; 
+        totalD += i.damagedStock; 
+        totalDispensed += (i.dispensedStock || 0); 
+    });
 
-    // หัวข้อหลัก (สรุปยอดรวมหมวดหมู่)
     const contentHeader = document.createElement('div');
-    contentHeader.className = 'p-6 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between';
+    contentHeader.className = 'p-6 border-b border-slate-200 bg-slate-50 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between';
     contentHeader.innerHTML = `
         <div class="flex items-center gap-4">
             <div class="w-14 h-14 rounded-xl border border-slate-200 shadow-sm bg-white flex items-center justify-center text-2xl text-indigo-500">📁</div>
@@ -655,19 +666,18 @@ function displayStockSummary(stockData) {
                 <p class="text-xs text-slate-500 mt-1.5 font-medium">รวมพัสดุในหมวดหมู่นี้: <span class="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">${activeItems.length} รายการ</span></p>
             </div>
         </div>
-        <div class="flex gap-4 text-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto justify-center">
-            <div class="flex flex-col px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ใหม่รวม</span><span class="text-lg font-black text-emerald-600 leading-none">${totalN}</span></div>
-            <div class="flex flex-col px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">มือสองรวม</span><span class="text-lg font-black text-blue-600 leading-none">${totalU}</span></div>
-            <div class="flex flex-col px-4"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ชำรุดรวม</span><span class="text-lg font-black text-rose-600 leading-none">${totalD}</span></div>
+        <div class="flex gap-2 sm:gap-4 text-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full xl:w-auto justify-center flex-wrap">
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ใหม่รวม</span><span class="text-lg font-black text-emerald-600 leading-none">${totalN}</span></div>
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">มือสองรวม</span><span class="text-lg font-black text-blue-600 leading-none">${totalU}</span></div>
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ชำรุดรวม</span><span class="text-lg font-black text-rose-600 leading-none">${totalD}</span></div>
+            <div class="flex flex-col px-2 sm:px-4"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">เบิกไปรวม</span><span class="text-lg font-black text-indigo-600 leading-none">${totalDispensed}</span></div>
         </div>
     `;
     contentArea.appendChild(contentHeader);
 
-    // คอนเทนเนอร์รวมพัสดุย่อย
     const itemsContainer = document.createElement('div');
     itemsContainer.className = 'p-6 bg-slate-50/50 space-y-6';
 
-    // จัดกลุ่มพัสดุตามชื่อพัสดุ (itemType) ภายในหมวดหมู่นั้นๆ
     const groupedByItemType = activeItems.reduce((acc, item) => {
         const type = item.itemType || 'ไม่ระบุชื่อรายการ';
         if (!acc[type]) acc[type] = [];
@@ -684,7 +694,6 @@ function displayStockSummary(stockData) {
         const typeWrapper = document.createElement('div');
         typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${hasLowStock ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
 
-        // ส่วนหัว (Accordion Header) ที่แสดงชื่อพัสดุ
         const typeHeader = document.createElement('div');
         typeHeader.className = 'flex items-center justify-between cursor-pointer p-4 hover:bg-slate-50 transition-colors select-none border-b border-slate-100';
         typeHeader.innerHTML = `
@@ -703,12 +712,10 @@ function displayStockSummary(stockData) {
             </div>
         `;
 
-        // ตารางไซส์
         const typeTableContainer = document.createElement('div');
         typeTableContainer.className = 'overflow-x-auto transition-all duration-300 origin-top';
         typeTableContainer.id = `table-${typeId}`;
 
-        // ฟังก์ชันคลิกย่อ-ขยาย (Accordion ของชื่อพัสดุ)
         typeHeader.addEventListener('click', () => {
             const isHidden = typeTableContainer.classList.contains('hidden');
             if (isHidden) {
@@ -798,8 +805,6 @@ function displayStockSummary(stockData) {
     }
 
     contentArea.appendChild(itemsContainer);
-    
-    // ดันส่วนเนื้อหาเข้าสู่คอนเทนเนอร์หลัก (ไม่สร้าง Sidebar ซ้ายแล้ว เพราะเราย้ายไปฝังในเมนูหลักแล้ว)
     container.appendChild(contentArea);
 }
 
@@ -1085,7 +1090,7 @@ async function handleSaveUser(e) {
     try { 
         await apiCall('/api/users', 'POST', { userData, adminUser: AppState.currentUser.username, originalUsername: AppState.currentEditUser }); 
         onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); 
-    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
+    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันห์'); }
 }
 
 function populateUserForm(username) {
@@ -1228,11 +1233,9 @@ function setupStaticEventListeners() {
     });
 
     const oldToggleBtn = document.getElementById('toggle-stock-form-btn');
-    if (oldToggleBtn) {
-        oldToggleBtn.innerHTML = '<span class="text-lg">➕</span> เพิ่มพัสดุใหม่ (ระบบใหม่)';
-        oldToggleBtn.classList.replace('bg-indigo-50', 'bg-indigo-600');
-        oldToggleBtn.classList.replace('text-indigo-600', 'text-white');
-        oldToggleBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openSuperStockModal(false); });
+    if (oldToggleBtn && oldToggleBtn.parentElement) {
+        // ซ่อนกล่องเดิมที่กินพื้นที่เยอะๆ ทิ้งไปเลย
+        oldToggleBtn.parentElement.style.display = 'none';
     }
     const oldFormArea = document.getElementById('stock-form-content');
     if (oldFormArea) oldFormArea.style.display = 'none';
