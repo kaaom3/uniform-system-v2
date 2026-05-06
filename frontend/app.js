@@ -509,12 +509,26 @@ async function handleProcessReturn(btn) {
 // ==========================================
 // 🏢 8. ADMIN: STOCK MANAGEMENT (SIDEBAR & MAIN CONTENT)
 // ==========================================
+
+// 💡 ฟังก์ชันอัปเดตรายชื่อ "หมวดหมู่" ที่มีในระบบให้กับ Datalist
+function updateCategoryDatalist() {
+    const datalist = document.getElementById('existing-categories');
+    if (!datalist) return;
+    
+    const uniqueCategories = [...new Set(AppState.masterStock.map(item => item.category).filter(Boolean))];
+    datalist.innerHTML = '';
+    uniqueCategories.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat;
+        datalist.appendChild(option);
+    });
+}
+
 function initStockSearchUI() {
     const container = document.getElementById('stock-summary-container');
     if (container && !document.getElementById('stock-search-wrapper')) {
         const searchWrapper = document.createElement('div');
         searchWrapper.id = 'stock-search-wrapper';
-        // 💡 แก้ให้กล่องค้นหาและปุ่มเพิ่มพัสดุอยู่บรรทัดเดียวกันเพื่อประหยัดพื้นที่
         searchWrapper.className = 'mb-6 flex flex-col sm:flex-row gap-4 items-center relative z-10';
         searchWrapper.innerHTML = `
             <div class="relative w-full flex-1">
@@ -534,7 +548,6 @@ function initStockSearchUI() {
             applyStockFilters();
         });
 
-        // 💡 ปุ่มแบบกะทัดรัด (Compact) สั่งให้เปิด Modal แบบเพิ่มของใหม่
         document.getElementById('compact-add-stock-btn').addEventListener('click', (e) => {
             e.preventDefault();
             openSuperStockModal(false);
@@ -564,6 +577,7 @@ function applyStockFilters() {
 function onStockReceived(newStockData) {
     AppState.masterStock = newStockData;
     populateTypeDropdown();
+    updateCategoryDatalist(); // 💡 อัปเดตรายการหมวดหมู่ทุกครั้งที่ดึงข้อมูลสต๊อกใหม่
     if (AppState.currentUser && AppState.currentUser.role === 'admin') {
         initStockSearchUI(); 
         applyStockFilters(); 
@@ -834,6 +848,7 @@ function updateLowStockAlerts() {
     }
 }
 
+// 💡 สร้างโครงสร้างหน้าต่างสำหรับสร้าง/แก้ไขพัสดุ พร้อมระบบ Datalist
 function injectSuperStockModal() {
     if (document.getElementById('super-stock-modal')) return;
     const modalHTML = `
@@ -866,13 +881,30 @@ function injectSuperStockModal() {
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อรายการพัสดุ <span class="text-red-500">*</span></label>
                             <input type="text" id="super-stock-type" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
                         </div>
+
+                        <!-- 💡 เพิ่ม Datalist สำหรับเลือกไซส์มาตรฐาน -->
                         <div>
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ไซส์ / ขนาด <span class="text-red-500">*</span></label>
-                            <input type="text" id="super-stock-size" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
+                            <input type="text" id="super-stock-size" list="standard-sizes" autocomplete="off" placeholder="เลือกหรือพิมพ์ขนาด..." class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
+                            <datalist id="standard-sizes">
+                                <option value="Free Size"></option>
+                                <option value="SS"></option>
+                                <option value="S"></option>
+                                <option value="M"></option>
+                                <option value="L"></option>
+                                <option value="XL"></option>
+                                <option value="2XL"></option>
+                                <option value="3XL"></option>
+                                <option value="4XL"></option>
+                                <option value="5XL"></option>
+                            </datalist>
                         </div>
+                        
+                        <!-- 💡 เพิ่ม Datalist สำหรับเลือกหมวดหมู่ที่มีอยู่ในระบบ -->
                         <div class="col-span-1 md:col-span-2">
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">หมวดหมู่ <span class="text-red-500">*</span></label>
-                            <input type="text" id="super-stock-category" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white" placeholder="เช่น เสื้อ, กางเกง, อุปกรณ์">
+                            <input type="text" id="super-stock-category" list="existing-categories" autocomplete="off" placeholder="เลือกจากระบบ หรือ พิมพ์หมวดหมู่ใหม่..." class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
+                            <datalist id="existing-categories"></datalist>
                         </div>
 
                         <div class="bg-white p-3 rounded-xl border border-slate-200 col-span-1 md:col-span-2 grid grid-cols-3 gap-3 shadow-sm">
@@ -957,6 +989,8 @@ function injectSuperStockModal() {
 function openSuperStockModal(isEdit = false, item = null) {
     const modal = document.getElementById('super-stock-modal');
     if (!modal) return;
+    
+    updateCategoryDatalist(); // 💡 อัปเดตรายการหมวดหมู่ใหม่ทุกครั้งก่อนเปิดฟอร์ม
 
     const inputsToLock = [ 'super-stock-type', 'super-stock-size', 'super-stock-category', 'super-stock-new-qty', 'super-stock-used-qty', 'super-stock-damaged-qty' ];
 
@@ -1090,7 +1124,7 @@ async function handleSaveUser(e) {
     try { 
         await apiCall('/api/users', 'POST', { userData, adminUser: AppState.currentUser.username, originalUsername: AppState.currentEditUser }); 
         onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); 
-    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันห์'); }
+    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
 }
 
 function populateUserForm(username) {
@@ -1429,7 +1463,7 @@ function onActionFailure(error) {
 
 function resetActionButtons() {
     showLoadingButton(document.getElementById('request-btn'), false); 
-    showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); 
+    showLoadingButton(document.getElementById('save-user-btn'), false, 'บันห์'); 
     document.querySelectorAll('button:disabled').forEach(btn => showLoadingButton(btn, false));
 }
 
