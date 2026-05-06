@@ -27,6 +27,10 @@ app.use(express.json());
 // ==========================================
 // 📂 FILE UPLOAD CONFIG (Cloudinary)
 // ==========================================
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY) {
+    console.error("⚠️ คำเตือน: ยังไม่ได้ตั้งค่าคีย์ Cloudinary ในไฟล์ .env หรือ บนเว็บ Render");
+}
+
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -36,7 +40,7 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-        folder: 'uniform_system', // ชื่อโฟลเดอร์ที่จะเก็บรูปบน Cloudinary
+        folder: 'uniform_system', 
         allowed_formats: ['jpg', 'png', 'jpeg', 'webp']
     }
 });
@@ -205,11 +209,9 @@ app.delete('/api/users/:username', async (req, res) => {
 // ==========================================
 const csvUpload = multer({ dest: 'uploads/' });
 
-// 💡 Endpoint อัปโหลดรูปขึ้น Cloudinary
 app.post('/api/upload', upload.single('image'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ที่อัปโหลด" });
-        // multer-storage-cloudinary จะคืนค่า path มาเป็น URL ของรูปบน Cloudinary
         console.log("✅ รูปถูกอัปโหลดไปที่ Cloudinary สำเร็จ:", req.file.path);
         res.json({ imageUrl: req.file.path });
     } catch (err) {
@@ -218,7 +220,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     }
 });
 
-// Endpoint อัปโหลดไฟล์ CSV ใช้ multer ตัวธรรมดา (csvUpload)
+// นำเข้า User
 app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
@@ -239,6 +241,73 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
         fs.unlinkSync(req.file.path); 
         res.json({ success: true, count: importedCount });
     } catch (err) { res.status(500).json({ error: "รูปแบบไฟล์ CSV ไม่ถูกต้อง" }); }
+});
+
+// 💡 นำเข้าประวัติเบิกย้อนหลัง (และตัดสต๊อกอัตโนมัติ)
+app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
+        const content = fs.readFileSync(req.file.path, 'utf8');
+        const lines = content.split(/\r?\n/);
+        let importedCount = 0;
+
+        for(let i = 1; i < lines.length; i++) { // ข้าม Header บรรทัดที่ 1
+            if (!lines[i].trim()) continue;
+            
+            // รูปแบบ CSV ที่คาดหวัง: Username,ItemType,Size,Quantity,Condition
+            const [username, itemType, size, quantityStr, condition] = lines[i].split(',');
+
+            if (username && itemType && size && quantityStr) {
+                const user = await User.findOne({ username: username.trim() });
+                if (user) {
+                    const qty = parseInt(quantityStr.trim()) || 1;
+                    const reqCondition = (condition && condition.trim().toUpperCase() === 'USED') ? 'Used' : 'New';
+
+                    // 1. สร้างประวัติเบิก (สถานะ Approved ทันที)
+                    const newReq = new Request({
+                        requestId: generateRequestId(),
+                        requesterName: user.name,
+                        department: user.department || '-',
+                        itemType: itemType.trim(),
+                        size: size.trim(),
+                        quantity: qty,
+                        reason: 'นำเข้าข้อมูลย้อนหลัง (Import CSV)',
+                        status: 'Approved',
+                        notes: `นำเข้าอัตโนมัติ (${reqCondition === 'Used' ? 'มือสอง' : 'ของใหม่'})`
+                    });
+                    await newReq.save();
+
+                    // 2. ปรับหักสต๊อกอัตโนมัติ (ถ้ามีของในระบบ)
+                    const stock = await Stock.findOne({ itemType: itemType.trim(), size: size.trim() });
+                    if (stock) {
+                        if (reqCondition === 'Used') {
+                            stock.usedStock = Math.max(0, stock.usedStock - qty);
+                        } else {
+                            stock.newStock = Math.max(0, stock.newStock - qty);
+                        }
+                        await stock.save();
+
+                        // 3. สร้างประวัติ (Log) ของสต๊อก
+                        await new StockTransaction({
+                            itemType: itemType.trim(),
+                            size: size.trim(),
+                            transactionType: reqCondition === 'Used' ? 'OUT-USED' : 'OUT',
+                            quantity: -Math.abs(qty),
+                            reason: `ตัดสต๊อกอัตโนมัติ (นำเข้า CSV ย้อนหลังให้: ${user.name})`,
+                            adminUser: req.body.adminUser || 'System'
+                        }).save();
+                    }
+
+                    importedCount++;
+                }
+            }
+        }
+        fs.unlinkSync(req.file.path); 
+        res.json({ success: true, count: importedCount });
+    } catch (err) { 
+        console.error("Import Requests Error:", err);
+        res.status(500).json({ error: "รูปแบบไฟล์ CSV ไม่ถูกต้อง" }); 
+    }
 });
 
 app.get('/api/export/history', async (req, res) => {

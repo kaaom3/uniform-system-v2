@@ -18,10 +18,9 @@ const AppState = {
     currentEditStock: null,
     stockFilterMode: 'ALL', 
     stockSearchTerm: '',
-    activeStockCategory: null // สถานะเก็บว่าตอนนี้กำลังคลิกดู "หมวดหมู่" ไหนอยู่
+    activeStockCategory: null 
 };
 
-// 💡 ฟังก์ชันช่วยจัดรูปแบบ URL รูปภาพให้รองรับทั้งไฟล์ระบบเก่าและ Cloudinary
 function getImageUrl(url) {
     if (!url) return 'https://placehold.co/128x128/e2e8f0/64748b?text=No+Image';
     return url.startsWith('http') ? url : API_BASE_URL + url;
@@ -32,8 +31,8 @@ function getImageUrl(url) {
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
-    injectSuperStockModal(); // สร้างหน้าต่าง Modal ใหม่สำหรับจัดการสต๊อก
-    setupStaticEventListeners(); // ผูกปุ่มคลิกต่างๆ 
+    injectSuperStockModal(); 
+    setupStaticEventListeners(); 
 });
 
 // ==========================================
@@ -165,7 +164,10 @@ async function loadInitialData() {
         AppState.userApprovedItems = requestsData.filter(r => r.status === 'Approved' && r.quantity > 0);
         populateReturnableItemsDropdown();
 
-        if (AppState.currentUser.role === 'admin') loadAdminData();
+        if (AppState.currentUser.role === 'admin') {
+            loadAdminData();
+            initImportRequestsUI(); // 💡 โหลด UI นำเข้า CSV ตอนเข้าสู่ระบบแอดมิน
+        }
     } catch (error) { showNotification(error.message, 'error'); }
 }
 
@@ -1217,6 +1219,63 @@ function handleHistorySearch() { AppState.pagination.history = 1; renderAllHisto
 function changeHistoryPage(dir) { AppState.pagination.history += dir; renderAllHistoryTable(); }
 function handleLogSearch() { AppState.pagination.logs = 1; renderAdminLogTable(); } 
 function changeLogPage(dir) { AppState.pagination.logs += dir; renderAdminLogTable(); } 
+
+// 💡 ฟังก์ชันใหม่สำหรับอัปโหลด CSV นำเข้าประวัติเบิกย้อนหลัง
+async function handleImportRequestsCSV() {
+    const fileInput = document.getElementById('csv-requests-input');
+    const file = fileInput?.files[0];
+    if (!file) return showNotification('กรุณาเลือกไฟล์ CSV ก่อน', 'error');
+
+    const formData = new FormData();
+    formData.append('csvfile', file);
+    formData.append('adminUser', AppState.currentUser.username);
+    
+    const btn = document.getElementById('import-requests-btn');
+    showLoadingButton(btn, true);
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/requests/import`, { method: 'POST', body: formData });
+        const text = await response.text(); 
+        try {
+            const result = JSON.parse(text);
+            if(result.success) {
+                showNotification(`นำเข้าข้อมูลสำเร็จ ${result.count} รายการ`, 'success');
+                refreshData(); 
+            } else { throw new Error(result.error); }
+        } catch(err) {
+            console.error("Server Error:", text);
+            throw new Error('เซิร์ฟเวอร์ขัดข้อง (ไฟล์อาจมีปัญหา หรือ API ผิดพลาด)');
+        }
+    } catch(e) { showNotification(e.message, 'error'); } 
+    finally { showLoadingButton(btn, false, 'นำเข้าข้อมูล'); if(fileInput) fileInput.value = ''; }
+}
+
+// 💡 สร้าง UI กล่องสำหรับอัปโหลด CSV ไว้ในแท็บประวัติ
+function initImportRequestsUI() {
+    const historyView = document.getElementById('content-history');
+    if (historyView && !document.getElementById('import-requests-container')) {
+        const importDiv = document.createElement('div');
+        importDiv.id = 'import-requests-container';
+        importDiv.className = 'bg-indigo-50 border border-indigo-200 rounded-xl p-5 mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm';
+        importDiv.innerHTML = `
+            <div>
+                <h4 class="text-sm font-bold text-indigo-800 mb-1 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    นำเข้าประวัติการเบิกพัสดุย้อนหลัง (CSV)
+                </h4>
+                <p class="text-xs text-indigo-600">Header ที่ต้องการ: <code class="bg-white px-1.5 py-0.5 rounded border border-indigo-100 font-bold">Username, ItemType, Size, Quantity, Condition</code><br><span class="opacity-80">* Condition ใส่ New หรือ Used</span></p>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <input type="file" id="csv-requests-input" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"/>
+                <button id="import-requests-btn" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-sm transition-all whitespace-nowrap">นำเข้าข้อมูล</button>
+            </div>
+        `;
+        // แทรกลงไปใต้ส่วนหัวของแท็บประวัติ
+        historyView.insertBefore(importDiv, historyView.children[1]);
+
+        // ผูก Event
+        document.getElementById('import-requests-btn').addEventListener('click', handleImportRequestsCSV);
+    }
+}
 
 // ==========================================
 // 🎨 11. UI UTILITIES & EVENT DELEGATION
