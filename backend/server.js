@@ -3,6 +3,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const fs = require('fs');
 const path = require('path');
 const https = require('https'); 
@@ -23,15 +25,22 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// 📂 FILE UPLOAD CONFIG (Multer)
+// 📂 FILE UPLOAD CONFIG (Cloudinary)
 // ==========================================
-if (!fs.existsSync('./uploads')) { fs.mkdirSync('./uploads'); }
-app.use('/uploads', express.static('uploads')); 
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'uniform_system', // ชื่อโฟลเดอร์ที่จะเก็บรูปบน Cloudinary
+        allowed_formats: ['jpg', 'png', 'jpeg', 'webp']
+    }
+});
+
 const upload = multer({ storage: storage });
 
 // ==========================================
@@ -54,15 +63,18 @@ const LINE_TOKEN = "dCnA72Q1lQkAo6W2wY4q/3JLZiUJ0UqF3r/5H/kYLVylWAaab2u3FRxeNmJN
 async function replyLineMessage(replyToken, text) {
     return new Promise((resolve, reject) => {
         if (replyToken === '00000000000000000000000000000000' || replyToken === 'ffffffffffffffffffffffffffffffff') return resolve();
+
         const payload = JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] });
         const options = {
             hostname: 'api.line.me', path: '/v2/bot/message/reply', method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}`, 'Content-Length': Buffer.byteLength(payload) }
         };
+
         const req = https.request(options, (res) => {
             let body = ''; res.on('data', (chunk) => body += chunk);
             res.on('end', () => resolve(body));
         });
+
         req.on('error', (e) => reject(e));
         req.write(payload); req.end();
     });
@@ -89,10 +101,10 @@ app.post('/api/webhook/line', async (req, res) => {
                         const user = await User.findOne({ username });
                         if (user) {
                             await new PasswordReset({ username, status: 'Pending' }).save();
-                            await replyLineMessage(replyToken, `รับเรื่องแล้ว! ⏳\nระบบได้ส่งคำขอรีเซ็ตรหัสผ่านของพนักงาน "${username}" ให้แอดมินแล้วครับ`);
+                            await replyLineMessage(replyToken, `รับเรื่องแล้ว! ⏳\nระบบได้ส่งคำขอรีเซ็ตรหัสผ่านของพนักงาน "${username}" ให้แอดมินแล้วครับ กรุณารอแอดมินแจ้งรหัสผ่านชั่วคราวให้ทราบครับ`);
                             sendPushMessage({ username: username }, 'รีเซ็ตรหัสผ่าน');
                         } else {
-                            await replyLineMessage(replyToken, `❌ ขออภัยครับ ไม่พบรหัสพนักงาน "${username}" ในระบบ`);
+                            await replyLineMessage(replyToken, `❌ ขออภัยครับ ไม่พบรหัสพนักงาน "${username}" ในระบบ กรุณาตรวจสอบอีกครั้ง`);
                         }
                     } else {
                         await replyLineMessage(replyToken, `พิมพ์คำสั่งไม่ถูกต้องครับ 😅\nกรุณาพิมพ์ "ลืมรหัส [รหัสพนักงาน]" \nตัวอย่าง: ลืมรหัส 1001`);
@@ -191,12 +203,17 @@ app.delete('/api/users/:username', async (req, res) => {
 // ==========================================
 // 📂 API: FILE UPLOAD & CSV EXPORT
 // ==========================================
+const csvUpload = multer({ dest: 'uploads/' });
+
+// 💡 Endpoint อัปโหลดรูป (ตอนนี้อัปขึ้น Cloudinary แล้วส่ง URL กลับไป)
 app.post('/api/upload', upload.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ที่อัปโหลด" });
-    res.json({ imageUrl: `/uploads/${req.file.filename}` });
+    // multer-storage-cloudinary จะคืนค่า path มาเป็น URL ของรูปบน Cloudinary
+    res.json({ imageUrl: req.file.path });
 });
 
-app.post('/api/users/import', upload.single('csvfile'), async (req, res) => {
+// Endpoint อัปโหลดไฟล์ CSV ใช้ multer ตัวธรรมดา (csvUpload) เพราะไม่ต้องอัปขึ้น Cloudinary
+app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
         const content = fs.readFileSync(req.file.path, 'utf8');
@@ -252,12 +269,10 @@ app.get('/api/export/stock-history', async (req, res) => {
 // 📦 STOCK MANAGEMENT (ระบบจัดการสต๊อกแบบใหม่)
 // ==========================================
 
-// 1. ดึงข้อมูลสต๊อกทั้งหมด
 app.get('/api/stock', async (req, res) => {
     try {
         const stocks = await Stock.find().lean();
         
-        // ค้นหาเฉพาะพัสดุที่กำลังถูกใช้งาน (คำนวณ Dispensed Stock อย่างเป็นระเบียบ)
         const activeRequests = await Request.find({ status: { $in: ['Approved', 'Pending Return'] } }, 'itemType size quantity');
         
         const dispensedMap = activeRequests.reduce((acc, req) => {
@@ -275,12 +290,10 @@ app.get('/api/stock', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. จัดการพัสดุ (สร้างใหม่ หรือ อัปเดตข้อมูล)
 app.post('/api/stock', async (req, res) => {
     try {
         const { itemType, size, originalItemType, originalSize, adminUser, imageUrl, category, newStock, usedStock, damagedStock, lowStockThreshold } = req.body;
         
-        // 🔹 โหมดแก้ไข: ตรวจสอบและอัปเดตเฉพาะรูปภาพและการแจ้งเตือน
         if (originalItemType && originalSize) {
             const stock = await Stock.findOne({ itemType: originalItemType, size: originalSize });
             if (!stock) return res.status(404).json({ error: 'ไม่พบพัสดุรายการนี้' });
@@ -293,7 +306,6 @@ app.post('/api/stock', async (req, res) => {
             return res.json({ success: true });
         }
 
-        // 🔹 โหมดสร้างใหม่: ตรวจสอบชื่อซ้ำและสร้างข้อมูลลงฐาน
         const existing = await Stock.findOne({ itemType, size });
         if (existing) return res.status(400).json({ error: 'พัสดุชื่อและไซส์นี้ มีข้อมูลอยู่ในระบบแล้ว' });
 
@@ -304,7 +316,6 @@ app.post('/api/stock', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 3. รับเข้าพัสดุ (IN)
 app.post('/api/stock/transaction', async (req, res) => {
     try {
         const { itemType, size, transactionType, quantity, reason, adminUser } = req.body;
@@ -322,14 +333,12 @@ app.post('/api/stock/transaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 4. ปรับปรุงยอดพัสดุแบบเจาะจง (Advanced Adjust)
 app.post('/api/stock/advanced-adjust', async (req, res) => {
     try {
         const { itemType, size, condition, mode, qty, reason, adminUser } = req.body;
         const stock = await Stock.findOne({ itemType, size });
         if (!stock) return res.status(404).json({ error: 'ไม่พบรายการพัสดุนี้ในระบบ' });
 
-        // 🔹 จับคู่ชนิดของสต๊อกให้โค้ดคลีนขึ้น
         const conditionFieldMap = { 'New': 'newStock', 'Used': 'usedStock', 'Damaged': 'damagedStock' };
         const conditionNameMap = { 'New': 'ของใหม่', 'Used': 'มือสอง', 'Damaged': 'ชำรุด' };
         
@@ -339,7 +348,6 @@ app.post('/api/stock/advanced-adjust', async (req, res) => {
         const currentQty = stock[targetField];
         let diffQty = 0;
 
-        // คำนวณส่วนต่างตามโหมดการปรับ
         if (mode === 'SET') diffQty = qty - currentQty; 
         else if (mode === 'ADD') diffQty = qty;
         else if (mode === 'DEDUCT') diffQty = -Math.abs(qty);
@@ -347,11 +355,9 @@ app.post('/api/stock/advanced-adjust', async (req, res) => {
         if (currentQty + diffQty < 0) return res.status(400).json({ error: `ไม่สามารถลดยอดได้ (ปัจจุบันมีเพียง ${currentQty})` });
         if (diffQty === 0) return res.json({ success: true });
 
-        // อัปเดตยอดคงเหลือ
         stock[targetField] += diffQty;
         await stock.save();
 
-        // บันทึกประวัติ
         const detailedReason = `ปรับปรุงยอด(${conditionNameMap[condition]}): ${diffQty > 0 ? '+' : ''}${diffQty} ชิ้น - ${reason}`;
         await new StockTransaction({ itemType, size, transactionType: 'ADJUST', quantity: diffQty, reason: detailedReason, adminUser }).save();
         await logAdminAction(adminUser, 'Stock Adjustment', `ปรับปรุงพัสดุ: ${itemType}(${size}) ${detailedReason}`);
@@ -360,7 +366,6 @@ app.post('/api/stock/advanced-adjust', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 5. ประวัติการเคลื่อนไหวสต๊อก
 app.get('/api/stock/history', async (req, res) => {
     try { res.json(await StockTransaction.find({ itemType: req.query.itemType, size: req.query.size }).sort({ createdAt: -1 })); } 
     catch (err) { res.status(500).json({ error: err.message }); }
@@ -435,7 +440,6 @@ app.post('/api/admin/approve', async (req, res) => {
         const stock = await Stock.findOne({ itemType: request.itemType, size: request.size });
         if (!stock) return res.status(404).json({ error: 'ไม่พบพัสดุในระบบ' });
         
-        // 🔹 เลือกหักสต๊อกตามที่แอดมินสั่ง
         const targetField = stockType === 'Used' ? 'usedStock' : 'newStock';
         if (stock[targetField] < approvedQuantity) {
             return res.status(400).json({ error: `สต๊อก${stockType === 'Used' ? 'มือสอง' : 'ของใหม่'} ไม่เพียงพอ` });
@@ -498,18 +502,15 @@ app.post('/api/admin/return-disburse', async (req, res) => {
         
         if (disbursementType === 'New' && stock.newStock < request.quantity) return res.status(400).json({ error: 'สต๊อกของใหม่ไม่พอสำหรับเปลี่ยน' });
 
-        // 1. รับคืนของเดิม
         const targetField = returnCondition === 'Used' ? 'usedStock' : 'damagedStock';
         const tTypeIn = returnCondition === 'Used' ? 'RETURN-USED' : 'RETURN-DAMAGED';
         stock[targetField] += request.quantity;
         await new StockTransaction({ itemType: request.itemType, size: request.size, transactionType: tTypeIn, quantity: request.quantity, reason: `รับคืนจาก ${request.requesterName}`, adminUser }).save();
 
-        // 2. เบิกของใหม่ไปเปลี่ยนให้
         stock.newStock -= request.quantity;
         await stock.save();
         await new StockTransaction({ itemType: request.itemType, size: request.size, transactionType: 'OUT', quantity: -Math.abs(request.quantity), reason: `เบิกจ่ายทดแทน`, adminUser }).save();
 
-        // 3. จัดการสถานะคำขอ
         request.status = 'Returned'; request.notes = `รับคืน(${returnCondition}) และเบิกของใหม่ให้แล้ว`; await request.save();
         const newReq = await new Request({ requestId: generateRequestId(), requesterName: request.requesterName, department: request.department, itemType: request.itemType, size: request.size, quantity: request.quantity, reason: `ทดแทนของชำรุด`, status: 'Approved' }).save();
         
