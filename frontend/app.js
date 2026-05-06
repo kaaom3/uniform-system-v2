@@ -21,6 +21,12 @@ const AppState = {
     activeStockCategory: null // สถานะเก็บว่าตอนนี้กำลังคลิกดู "หมวดหมู่" ไหนอยู่
 };
 
+// 💡 ฟังก์ชันช่วยจัดรูปแบบ URL รูปภาพให้รองรับทั้งไฟล์ระบบเก่าและ Cloudinary
+function getImageUrl(url) {
+    if (!url) return 'https://placehold.co/128x128/e2e8f0/64748b?text=No+Image';
+    return url.startsWith('http') ? url : API_BASE_URL + url;
+}
+
 // ==========================================
 // 🚀 2. INITIALIZATION
 // ==========================================
@@ -33,12 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==========================================
 // 🌐 3. API WRAPPER
 // ==========================================
-// 💡 ฟังก์ชันช่วยจัดรูปแบบ URL รูปภาพให้รองรับทั้งไฟล์ระบบเก่าและ Cloudinary
-function getImageUrl(url) {
-    if (!url) return '';
-    return url.startsWith('http') ? url : API_BASE_URL + url;
-}
-
 async function apiCall(endpoint, method = 'GET', body = null) {
     const options = { method, headers: {} };
     if (body) {
@@ -236,8 +236,7 @@ function displaySelectedItemImage() {
     const stockItem = AppState.masterStock.find(item => item.itemType === typeInput.value && item.size === sizeInput.value);
     const previewContainer = document.getElementById('item-image-preview-container');
     if (stockItem && stockItem.imageUrl && previewContainer) {
-        const imgUrl = stockItem.imageUrl.startsWith('http') ? stockItem.imageUrl : API_BASE_URL + stockItem.imageUrl;
-        document.getElementById('item-image-preview').src = imgUrl; 
+        document.getElementById('item-image-preview').src = getImageUrl(stockItem.imageUrl); 
         previewContainer.classList.remove('hidden');
     } else if (previewContainer) { 
         previewContainer.classList.add('hidden'); 
@@ -517,7 +516,6 @@ async function handleProcessReturn(btn) {
 // 🏢 8. ADMIN: STOCK MANAGEMENT (SIDEBAR & MAIN CONTENT)
 // ==========================================
 
-// 💡 ฟังก์ชันอัปเดตรายชื่อ "หมวดหมู่" ที่มีในระบบให้กับ Datalist
 function updateCategoryDatalist() {
     const datalist = document.getElementById('existing-categories');
     if (!datalist) return;
@@ -584,7 +582,7 @@ function applyStockFilters() {
 function onStockReceived(newStockData) {
     AppState.masterStock = newStockData;
     populateTypeDropdown();
-    updateCategoryDatalist(); // 💡 อัปเดตรายการหมวดหมู่ทุกครั้งที่ดึงข้อมูลสต๊อกใหม่
+    updateCategoryDatalist(); 
     if (AppState.currentUser && AppState.currentUser.role === 'admin') {
         initStockSearchUI(); 
         applyStockFilters(); 
@@ -599,7 +597,6 @@ function displayStockSummary(stockData) {
     
     if (!stockData || stockData.length === 0) {
         container.innerHTML = '<div class="text-center p-12 bg-white rounded-2xl border border-slate-200"><p class="text-slate-500 font-medium text-lg">ไม่พบพัสดุที่ค้นหาในระบบ</p></div>';
-        
         const submenu = document.getElementById('stock-category-submenu');
         if (submenu) submenu.innerHTML = '';
         return;
@@ -660,9 +657,8 @@ function displayStockSummary(stockData) {
         submenu.classList.add('hidden');
     }
 
-
     // ------------------------------------------
-    // ➡️ ฝั่งขวา: ตารางแสดงรายละเอียดแบบเต็มจอ
+    // ➡️ ฝั่งขวา: ตารางแสดงรายละเอียด
     // ------------------------------------------
     const contentArea = document.createElement('div');
     contentArea.className = 'w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-w-0';
@@ -709,11 +705,16 @@ function displayStockSummary(stockData) {
     for (const typeName in groupedByItemType) {
         const itemsOfType = groupedByItemType[typeName];
         const typeId = 'type-' + typeName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '') + Math.floor(Math.random()*1000);
-        
-        const rawImgUrl = itemsOfType[0]?.imageUrl || '';
-        const img = rawImgUrl ? (rawImgUrl.startsWith('http') ? rawImgUrl : API_BASE_URL + rawImgUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
-        
+        const img = itemsOfType[0]?.imageUrl ? getImageUrl(itemsOfType[0].imageUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
         const hasLowStock = itemsOfType.some(i => i.newStock <= (i.lowStockThreshold || 5));
+
+        // 💡 คำนวณยอดรวมย่อย (Fix Error ตรงนี้เรียบร้อยครับ)
+        let typeTotalN = 0, typeTotalU = 0, typeTotalD = 0;
+        itemsOfType.forEach(i => { 
+            typeTotalN += i.newStock; 
+            typeTotalU += i.usedStock; 
+            typeTotalD += i.damagedStock; 
+        });
 
         const typeWrapper = document.createElement('div');
         typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${hasLowStock ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
@@ -898,7 +899,6 @@ function injectSuperStockModal() {
                             <input type="text" id="super-stock-type" class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
                         </div>
 
-                        <!-- 💡 เพิ่ม Datalist สำหรับเลือกไซส์มาตรฐาน -->
                         <div>
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ไซส์ / ขนาด <span class="text-red-500">*</span></label>
                             <input type="text" id="super-stock-size" list="standard-sizes" autocomplete="off" placeholder="เลือกหรือพิมพ์ขนาด..." class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
@@ -916,7 +916,6 @@ function injectSuperStockModal() {
                             </datalist>
                         </div>
                         
-                        <!-- 💡 เพิ่ม Datalist สำหรับเลือกหมวดหมู่ที่มีอยู่ในระบบ -->
                         <div class="col-span-1 md:col-span-2">
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">หมวดหมู่ <span class="text-red-500">*</span></label>
                             <input type="text" id="super-stock-category" list="existing-categories" autocomplete="off" placeholder="เลือกจากระบบ หรือ พิมพ์หมวดหมู่ใหม่..." class="w-full py-2.5 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 bg-white">
@@ -1006,7 +1005,7 @@ function openSuperStockModal(isEdit = false, item = null) {
     const modal = document.getElementById('super-stock-modal');
     if (!modal) return;
     
-    updateCategoryDatalist(); // 💡 อัปเดตรายการหมวดหมู่ใหม่ทุกครั้งก่อนเปิดฟอร์ม
+    updateCategoryDatalist(); 
 
     const inputsToLock = [ 'super-stock-type', 'super-stock-size', 'super-stock-category', 'super-stock-new-qty', 'super-stock-used-qty', 'super-stock-damaged-qty' ];
 
@@ -1019,9 +1018,7 @@ function openSuperStockModal(isEdit = false, item = null) {
         document.getElementById('super-stock-size').value = item.size;
         document.getElementById('super-stock-category').value = item.category || '';
         document.getElementById('super-stock-image-url').value = item.imageUrl || '';
-        
-        const imgUrl = item.imageUrl || '';
-        document.getElementById('super-stock-image-preview').src = imgUrl ? (imgUrl.startsWith('http') ? imgUrl : API_BASE_URL + imgUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
+        document.getElementById('super-stock-image-preview').src = item.imageUrl ? getImageUrl(item.imageUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
         
         document.getElementById('super-stock-new-qty').value = item.newStock || 0;
         document.getElementById('super-stock-used-qty').value = item.usedStock || 0;
