@@ -205,14 +205,20 @@ app.delete('/api/users/:username', async (req, res) => {
 // ==========================================
 const csvUpload = multer({ dest: 'uploads/' });
 
-// 💡 Endpoint อัปโหลดรูป (ตอนนี้อัปขึ้น Cloudinary แล้วส่ง URL กลับไป)
+// 💡 Endpoint อัปโหลดรูปขึ้น Cloudinary
 app.post('/api/upload', upload.single('image'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ที่อัปโหลด" });
-    // multer-storage-cloudinary จะคืนค่า path มาเป็น URL ของรูปบน Cloudinary
-    res.json({ imageUrl: req.file.path });
+    try {
+        if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ที่อัปโหลด" });
+        // multer-storage-cloudinary จะคืนค่า path มาเป็น URL ของรูปบน Cloudinary
+        console.log("✅ รูปถูกอัปโหลดไปที่ Cloudinary สำเร็จ:", req.file.path);
+        res.json({ imageUrl: req.file.path });
+    } catch (err) {
+        console.error("❌ อัปโหลดรูปล้มเหลว:", err);
+        res.status(500).json({ error: "อัปโหลดรูปล้มเหลว" });
+    }
 });
 
-// Endpoint อัปโหลดไฟล์ CSV ใช้ multer ตัวธรรมดา (csvUpload) เพราะไม่ต้องอัปขึ้น Cloudinary
+// Endpoint อัปโหลดไฟล์ CSV ใช้ multer ตัวธรรมดา (csvUpload)
 app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });

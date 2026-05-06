@@ -33,6 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==========================================
 // 🌐 3. API WRAPPER
 // ==========================================
+// 💡 ฟังก์ชันช่วยจัดรูปแบบ URL รูปภาพให้รองรับทั้งไฟล์ระบบเก่าและ Cloudinary
+function getImageUrl(url) {
+    if (!url) return '';
+    return url.startsWith('http') ? url : API_BASE_URL + url;
+}
+
 async function apiCall(endpoint, method = 'GET', body = null) {
     const options = { method, headers: {} };
     if (body) {
@@ -230,7 +236,8 @@ function displaySelectedItemImage() {
     const stockItem = AppState.masterStock.find(item => item.itemType === typeInput.value && item.size === sizeInput.value);
     const previewContainer = document.getElementById('item-image-preview-container');
     if (stockItem && stockItem.imageUrl && previewContainer) {
-        document.getElementById('item-image-preview').src = API_BASE_URL + stockItem.imageUrl; 
+        const imgUrl = stockItem.imageUrl.startsWith('http') ? stockItem.imageUrl : API_BASE_URL + stockItem.imageUrl;
+        document.getElementById('item-image-preview').src = imgUrl; 
         previewContainer.classList.remove('hidden');
     } else if (previewContainer) { 
         previewContainer.classList.add('hidden'); 
@@ -702,16 +709,11 @@ function displayStockSummary(stockData) {
     for (const typeName in groupedByItemType) {
         const itemsOfType = groupedByItemType[typeName];
         const typeId = 'type-' + typeName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '') + Math.floor(Math.random()*1000);
-        const img = itemsOfType[0]?.imageUrl ? (API_BASE_URL + itemsOfType[0].imageUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
+        
+        const rawImgUrl = itemsOfType[0]?.imageUrl || '';
+        const img = rawImgUrl ? (rawImgUrl.startsWith('http') ? rawImgUrl : API_BASE_URL + rawImgUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
+        
         const hasLowStock = itemsOfType.some(i => i.newStock <= (i.lowStockThreshold || 5));
-
-        // 💡 คำนวณยอดรวมย่อย สำหรับแต่ละรายชื่อพัสดุ (itemType)
-        let typeTotalN = 0, typeTotalU = 0, typeTotalD = 0;
-        itemsOfType.forEach(i => { 
-            typeTotalN += i.newStock; 
-            typeTotalU += i.usedStock; 
-            typeTotalD += i.damagedStock; 
-        });
 
         const typeWrapper = document.createElement('div');
         typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${hasLowStock ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
@@ -1017,7 +1019,9 @@ function openSuperStockModal(isEdit = false, item = null) {
         document.getElementById('super-stock-size').value = item.size;
         document.getElementById('super-stock-category').value = item.category || '';
         document.getElementById('super-stock-image-url').value = item.imageUrl || '';
-        document.getElementById('super-stock-image-preview').src = item.imageUrl ? (API_BASE_URL + item.imageUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
+        
+        const imgUrl = item.imageUrl || '';
+        document.getElementById('super-stock-image-preview').src = imgUrl ? (imgUrl.startsWith('http') ? imgUrl : API_BASE_URL + imgUrl) : 'https://placehold.co/128x128/e2e8f0/64748b?text=Image';
         
         document.getElementById('super-stock-new-qty').value = item.newStock || 0;
         document.getElementById('super-stock-used-qty').value = item.usedStock || 0;
