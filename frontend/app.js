@@ -710,12 +710,13 @@ function displayStockSummary(stockData) {
         const img = itemsOfType[0]?.imageUrl ? getImageUrl(itemsOfType[0].imageUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
         const hasLowStock = itemsOfType.some(i => i.newStock <= (i.lowStockThreshold || 5));
 
-        // 💡 คำนวณยอดรวมย่อย (Fix Error ตรงนี้เรียบร้อยครับ)
-        let typeTotalN = 0, typeTotalU = 0, typeTotalD = 0;
+        // 💡 คำนวณยอดรวมย่อย (เพิ่มยอดเบิกไปแล้ว)
+        let typeTotalN = 0, typeTotalU = 0, typeTotalD = 0, typeTotalDispensed = 0;
         itemsOfType.forEach(i => { 
             typeTotalN += i.newStock; 
             typeTotalU += i.usedStock; 
             typeTotalD += i.damagedStock; 
+            typeTotalDispensed += (i.dispensedStock || 0); 
         });
 
         const typeWrapper = document.createElement('div');
@@ -739,6 +740,7 @@ function displayStockSummary(stockData) {
                     <div class="flex flex-col px-2"><span class="text-[9px] text-slate-400 font-bold uppercase">ใหม่</span><span class="text-sm font-black text-emerald-600">${typeTotalN}</span></div>
                     <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">มือสอง</span><span class="text-sm font-black text-blue-600">${typeTotalU}</span></div>
                     <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">ชำรุด</span><span class="text-sm font-black text-rose-600">${typeTotalD}</span></div>
+                    <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">เบิกไป</span><span class="text-sm font-black text-indigo-600">${typeTotalDispensed}</span></div>
                 </div>
                 <div class="text-slate-400 p-2 rounded-full hover:bg-slate-100 transition-colors">
                     <svg class="w-5 h-5 transform transition-transform duration-300 rotate-180" id="icon-${typeId}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
