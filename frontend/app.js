@@ -1499,10 +1499,15 @@ function setupStaticEventListeners() {
 function showNotification(message, type = 'success') {
     const el = document.getElementById('notification');
     if(!el) return;
-    document.getElementById('notification-message').textContent = message;
+    
+    // 💡 แปลงการขึ้นบรรทัดใหม่ให้เป็น <br> เพื่อโชว์รายการพัสดุที่ขาดสต๊อก
+    document.getElementById('notification-message').innerHTML = message.replace(/\n/g, '<br>');
+    
     el.classList.remove('bg-red-500', 'bg-emerald-500', 'hidden'); 
     el.classList.add(type === 'error' ? 'bg-red-500' : 'bg-emerald-500');
-    setTimeout(() => el.classList.add('hidden'), 4000);
+    
+    // ถ้าเป็น Error ให้โชว์นานขึ้น (8 วินาที) จะได้อ่านทัน
+    setTimeout(() => el.classList.add('hidden'), type === 'error' ? 8000 : 4000);
 }
 
 function showLoadingButton(button, isLoading, originalText = '') {
