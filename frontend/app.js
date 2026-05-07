@@ -1481,10 +1481,69 @@ function setupStaticEventListeners() {
             const username = e.target.dataset.requesterName || e.target.dataset.username;
             openHistoryModal(username);
             try {
-                const summary = await apiCall(`/api/requests/me?username=${username}`);
-                const totalItems = summary.reduce((acc, req) => req.status === 'Approved' ? acc + req.quantity : acc, 0);
-                document.getElementById('history-modal-content').innerHTML = `<div class="grid grid-cols-2 gap-4 text-center mt-4"><div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100"><p class="text-sm font-bold text-indigo-800">คำขอทั้งหมด</p><p class="text-3xl font-black text-indigo-600">${summary.length || 0}</p></div><div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100"><p class="text-sm font-bold text-emerald-800">พัสดุที่เคยเบิก</p><p class="text-3xl font-black text-emerald-600">${totalItems}</p></div></div>`;
-            } catch(e) {}
+                const requests = await apiCall(`/api/requests/me?username=${username}`);
+                const totalItems = requests.reduce((acc, req) => req.status === 'Approved' ? acc + req.quantity : acc, 0);
+                
+                let html = `
+                    <div class="grid grid-cols-2 gap-4 text-center mt-4">
+                        <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                            <p class="text-sm font-bold text-indigo-800">คำขอทั้งหมด</p>
+                            <p class="text-3xl font-black text-indigo-600">${requests.length || 0}</p>
+                        </div>
+                        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                            <p class="text-sm font-bold text-emerald-800">พัสดุที่เคยเบิก</p>
+                            <p class="text-3xl font-black text-emerald-600">${totalItems}</p>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <h4 class="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            รายละเอียดการเบิก-คืน
+                        </h4>
+                        <div class="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
+                            <div class="overflow-x-auto max-h-60 overflow-y-auto">
+                                <table class="min-w-full divide-y divide-slate-200">
+                                    <thead class="bg-slate-100 sticky top-0">
+                                        <tr>
+                                            <th class="px-4 py-2.5 text-left text-[11px] font-bold text-slate-600 uppercase">เวลา</th>
+                                            <th class="px-4 py-2.5 text-left text-[11px] font-bold text-slate-600 uppercase">รายการพัสดุ</th>
+                                            <th class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-600 uppercase">จำนวน</th>
+                                            <th class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-600 uppercase">สถานะ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-slate-50">
+                `;
+
+                if (requests.length === 0) {
+                    html += `<tr><td colspan="4" class="px-4 py-6 text-center text-sm text-slate-500 font-medium">ไม่มีประวัติในระบบ</td></tr>`;
+                } else {
+                    requests.forEach(req => {
+                        const safeStatus = (req.status || 'unknown').replace(' ', '-').toLowerCase();
+                        const statusMap = {'pending':'bg-yellow-100 text-yellow-800','approved':'bg-emerald-100 text-emerald-800','rejected':'bg-red-100 text-red-800','returned':'bg-indigo-100 text-indigo-800','pending-return':'bg-orange-100 text-orange-800 border border-orange-200'};
+                        const statusClass = statusMap[safeStatus] || 'bg-slate-100 text-slate-800';
+                        
+                        html += `
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">${new Date(req.createdAt).toLocaleString()}</td>
+                                <td class="px-4 py-3 text-xs font-medium text-slate-800">${req.itemType} <span class="text-slate-500 ml-1">(ไซส์ ${req.size})</span></td>
+                                <td class="px-4 py-3 text-center text-xs font-black text-indigo-600">${req.quantity}</td>
+                                <td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${statusClass}">${req.status}</span></td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('history-modal-content').innerHTML = html;
+            } catch(e) {
+                document.getElementById('history-modal-content').innerHTML = '<p class="text-red-500 text-center py-4">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>';
+            }
         }
     });
 
