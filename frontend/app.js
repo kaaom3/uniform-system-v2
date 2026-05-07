@@ -566,7 +566,7 @@ function applyStockFilters() {
     let filtered = AppState.masterStock;
 
     if (AppState.stockFilterMode === 'LOW') {
-        filtered = filtered.filter(item => item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5));
+        filtered = filtered.filter(item => item.newStock <= (item.lowStockThreshold || 5));
     }
 
     if (AppState.stockSearchTerm) {
@@ -677,6 +677,8 @@ function displayStockSummary(stockData) {
 
     const contentHeader = document.createElement('div');
     contentHeader.className = 'p-6 border-b border-slate-200 bg-slate-50 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between';
+    
+    // 💡 อัปเดตปรับขนาดตัวเลขหมวดหมู่ใหญ่ให้ใหญ่ชัดเจนขึ้น (text-3xl)
     contentHeader.innerHTML = `
         <div class="flex items-center gap-4">
             <div class="w-14 h-14 rounded-xl border border-slate-200 shadow-sm bg-white flex items-center justify-center text-2xl text-indigo-500">📁</div>
@@ -685,11 +687,11 @@ function displayStockSummary(stockData) {
                 <p class="text-xs text-slate-500 mt-1.5 font-medium">รวมพัสดุในหมวดหมู่นี้: <span class="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">${activeItems.length} รายการ</span></p>
             </div>
         </div>
-        <div class="flex gap-2 sm:gap-4 text-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full xl:w-auto justify-center flex-wrap">
-            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ใหม่รวม</span><span class="text-lg font-black text-emerald-600 leading-none">${totalN}</span></div>
-            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">มือสองรวม</span><span class="text-lg font-black text-blue-600 leading-none">${totalU}</span></div>
-            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ชำรุดรวม</span><span class="text-lg font-black text-rose-600 leading-none">${totalD}</span></div>
-            <div class="flex flex-col px-2 sm:px-4"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">เบิกไปรวม</span><span class="text-lg font-black text-indigo-600 leading-none">${totalDispensed}</span></div>
+        <div class="flex gap-2 sm:gap-6 text-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm w-full xl:w-auto justify-center flex-wrap">
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[11px] text-slate-400 font-bold uppercase mb-2">ใหม่รวม</span><span class="text-3xl font-black text-emerald-600 leading-none">${totalN}</span></div>
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[11px] text-slate-400 font-bold uppercase mb-2">มือสองรวม</span><span class="text-3xl font-black text-blue-600 leading-none">${totalU}</span></div>
+            <div class="flex flex-col px-2 sm:px-4 border-r border-slate-100"><span class="text-[11px] text-slate-400 font-bold uppercase mb-2">ชำรุดรวม</span><span class="text-3xl font-black text-rose-600 leading-none">${totalD}</span></div>
+            <div class="flex flex-col px-2 sm:px-4"><span class="text-[11px] text-slate-400 font-bold uppercase mb-2">เบิกไปรวม</span><span class="text-3xl font-black text-indigo-600 leading-none">${totalDispensed}</span></div>
         </div>
     `;
     contentArea.appendChild(contentHeader);
@@ -708,9 +710,10 @@ function displayStockSummary(stockData) {
         const itemsOfType = groupedByItemType[typeName];
         const typeId = 'type-' + typeName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '') + Math.floor(Math.random()*1000);
         const img = itemsOfType[0]?.imageUrl ? getImageUrl(itemsOfType[0].imageUrl) : 'https://placehold.co/80x80/e2e8f0/64748b?text=No+Img';
-        const hasLowStock = itemsOfType.some(i => i.newStock <= (i.lowStockThreshold || 5));
+        
+        const hasOutStock = itemsOfType.some(i => i.newStock === 0);
+        const hasLowStock = itemsOfType.some(i => i.newStock > 0 && i.newStock <= (i.lowStockThreshold || 5));
 
-        // 💡 คำนวณยอดรวมย่อย (เพิ่มยอดเบิกไปแล้ว)
         let typeTotalN = 0, typeTotalU = 0, typeTotalD = 0, typeTotalDispensed = 0;
         itemsOfType.forEach(i => { 
             typeTotalN += i.newStock; 
@@ -720,30 +723,36 @@ function displayStockSummary(stockData) {
         });
 
         const typeWrapper = document.createElement('div');
-        typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${hasLowStock ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
+        typeWrapper.className = `bg-white rounded-xl shadow-sm overflow-hidden border ${(hasLowStock || hasOutStock) ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`;
 
         const typeHeader = document.createElement('div');
         typeHeader.className = 'flex items-center justify-between cursor-pointer p-4 hover:bg-slate-50 transition-colors select-none border-b border-slate-100';
+        
+        let alertBadge = '';
+        if (hasOutStock) alertBadge = '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-600 text-white animate-pulse border border-red-700">สต๊อกหมด</span>';
+        else if (hasLowStock) alertBadge = '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 animate-pulse border border-red-200">สต๊อกต่ำ</span>';
+        
+        // 💡 อัปเดตปรับขนาดตัวเลขยอดรวมแต่ละพัสดุให้ใหญ่และหนาขึ้น (text-xl)
         typeHeader.innerHTML = `
             <div class="flex items-center gap-4">
                 <img src="${img}" class="w-12 h-12 rounded-lg object-cover border border-slate-200 shadow-sm bg-white">
                 <div>
                     <div class="flex items-center gap-2">
                         <h4 class="text-base font-bold text-slate-800">${typeName}</h4>
-                        ${hasLowStock ? '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 animate-pulse border border-red-200">สต๊อกต่ำ</span>' : ''}
+                        ${alertBadge}
                     </div>
                     <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold mt-1 inline-block">${itemsOfType.length} ขนาดไซส์</span>
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <div class="hidden sm:flex gap-3 text-center mr-2">
-                    <div class="flex flex-col px-2"><span class="text-[9px] text-slate-400 font-bold uppercase">ใหม่</span><span class="text-sm font-black text-emerald-600">${typeTotalN}</span></div>
-                    <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">มือสอง</span><span class="text-sm font-black text-blue-600">${typeTotalU}</span></div>
-                    <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">ชำรุด</span><span class="text-sm font-black text-rose-600">${typeTotalD}</span></div>
-                    <div class="flex flex-col px-2 border-l border-slate-200"><span class="text-[9px] text-slate-400 font-bold uppercase">เบิกไป</span><span class="text-sm font-black text-indigo-600">${typeTotalDispensed}</span></div>
+                <div class="hidden sm:flex gap-4 text-center mr-4">
+                    <div class="flex flex-col px-3"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ใหม่</span><span class="text-xl font-black text-emerald-600">${typeTotalN}</span></div>
+                    <div class="flex flex-col px-3 border-l border-slate-200"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">มือสอง</span><span class="text-xl font-black text-blue-600">${typeTotalU}</span></div>
+                    <div class="flex flex-col px-3 border-l border-slate-200"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">ชำรุด</span><span class="text-xl font-black text-rose-600">${typeTotalD}</span></div>
+                    <div class="flex flex-col px-3 border-l border-slate-200"><span class="text-[10px] text-slate-400 font-bold uppercase mb-1">เบิกไป</span><span class="text-xl font-black text-indigo-600">${typeTotalDispensed}</span></div>
                 </div>
                 <div class="text-slate-400 p-2 rounded-full hover:bg-slate-100 transition-colors">
-                    <svg class="w-5 h-5 transform transition-transform duration-300 rotate-180" id="icon-${typeId}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
+                    <svg class="w-6 h-6 transform transition-transform duration-300 rotate-180" id="icon-${typeId}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
                 </div>
             </div>
         `;
@@ -768,10 +777,10 @@ function displayStockSummary(stockData) {
         table.innerHTML = `
             <thead class="bg-slate-50/80">
                 <tr>
-                    <th class="px-6 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-1/4">ไซส์ / ขนาด</th>
-                    <th class="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">คงเหลือ (ใหม่ / มือสอง / ชำรุด)</th>
-                    <th class="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">สถิติระบบ</th>
-                    <th class="px-6 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">จัดการสต๊อก</th>
+                    <th class="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-1/4">ไซส์ / ขนาด</th>
+                    <th class="px-4 py-4 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">คงเหลือ (ใหม่ / มือสอง / ชำรุด)</th>
+                    <th class="px-4 py-4 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">สถิติระบบ</th>
+                    <th class="px-6 py-4 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">จัดการสต๊อก</th>
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-slate-50"></tbody>
@@ -780,52 +789,59 @@ function displayStockSummary(stockData) {
         const tbody = table.querySelector('tbody');
 
         itemsOfType.forEach(item => {
-            const isLow = item.newStock <= (item.lowStockThreshold || 5);
+            const isOut = item.newStock === 0;
+            const isLow = item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5);
             const dispensed = item.dispensedStock || 0;
             const totalSystem = item.newStock + item.usedStock + item.damagedStock + dispensed;
             
             const tr = document.createElement('tr');
-            tr.className = `hover:bg-slate-50 transition-colors ${isLow ? 'bg-red-50/20' : ''}`;
+            tr.className = `hover:bg-slate-50 transition-colors ${(isLow || isOut) ? 'bg-red-50/20' : ''}`;
+            
+            let rowAlertBadge = '';
+            if (isOut) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white border border-red-700">หมด</span>';
+            else if (isLow) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">ใกล้หมด</span>';
+            
+            // 💡 อัปเดตปรับขนาดตัวเลขในตาราง (คงเหลือตามไซส์) ให้ใหญ่ขึ้นและเด่นขึ้น
             tr.innerHTML = `
-                <td class="px-6 py-3 whitespace-nowrap">
-                    <span class="font-bold text-slate-700 text-[14px]">ไซส์ ${item.size}</span>
-                    ${isLow ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">ใกล้หมด</span>' : ''}
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="font-bold text-slate-800 text-[15px]">ไซส์ ${item.size}</span>
+                    ${rowAlertBadge}
                 </td>
-                <td class="px-4 py-3">
-                    <div class="flex justify-center gap-1.5">
-                        <div class="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded text-emerald-700 border border-emerald-100 min-w-[3rem] justify-center" title="ของใหม่">
-                            <span class="text-xs font-black">${item.newStock}</span>
+                <td class="px-4 py-4">
+                    <div class="flex justify-center gap-2">
+                        <div class="flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded text-emerald-700 border border-emerald-100 min-w-[3.5rem] justify-center" title="ของใหม่">
+                            <span class="text-base font-black">${item.newStock}</span>
                         </div>
-                        <div class="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded text-blue-700 border border-blue-100 min-w-[3rem] justify-center" title="มือสอง">
-                            <span class="text-xs font-black">${item.usedStock}</span>
+                        <div class="flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded text-blue-700 border border-blue-100 min-w-[3.5rem] justify-center" title="มือสอง">
+                            <span class="text-base font-black">${item.usedStock}</span>
                         </div>
-                        <div class="flex items-center gap-1 bg-rose-50 px-2 py-1 rounded text-rose-700 border border-rose-100 min-w-[3rem] justify-center" title="ชำรุด">
-                            <span class="text-xs font-black">${item.damagedStock}</span>
+                        <div class="flex items-center gap-1 bg-rose-50 px-3 py-1.5 rounded text-rose-700 border border-rose-100 min-w-[3.5rem] justify-center" title="ชำรุด">
+                            <span class="text-base font-black">${item.damagedStock}</span>
                         </div>
                     </div>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    <div class="flex flex-col items-center gap-1">
-                        <div class="text-[9px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-full max-w-[110px] flex justify-between">
-                            <span>เบิกไป:</span> <span class="font-bold text-indigo-600">${dispensed}</span>
+                <td class="px-4 py-4 text-center">
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded border border-slate-200 w-full max-w-[120px] flex justify-between items-center">
+                            <span>เบิกไป:</span> <span class="text-sm font-black text-indigo-600">${dispensed}</span>
                         </div>
-                        <div class="text-[9px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-full max-w-[110px] flex justify-between">
-                            <span>รวม:</span> <span class="font-bold text-slate-800">${totalSystem}</span>
+                        <div class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded border border-slate-200 w-full max-w-[120px] flex justify-between items-center">
+                            <span>รวมทั้งหมด:</span> <span class="text-sm font-black text-slate-800">${totalSystem}</span>
                         </div>
                     </div>
                 </td>
-                <td class="px-6 py-3 text-right whitespace-nowrap">
+                <td class="px-6 py-4 text-right whitespace-nowrap">
                     <div class="flex items-center justify-end gap-1.5">
-                        <button title="รับเข้าสต๊อก" class="receive-stock-btn p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 border border-emerald-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <button title="รับเข้าสต๊อก" class="receive-stock-btn p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 border border-emerald-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
                             <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"></path></svg>
                         </button>
-                        <button title="ปรับยอด" class="adjust-stock-btn p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-700 border border-amber-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <button title="ปรับยอด" class="adjust-stock-btn p-2 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-700 border border-amber-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
                             <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
                         </button>
-                        <button title="อัปเดตรูป/แจ้งเตือน" class="edit-stock-btn p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <button title="อัปเดตรูป/แจ้งเตือน" class="edit-stock-btn p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
                             <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         </button>
-                        <button title="ประวัติ" class="history-stock-btn p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <button title="ประวัติ" class="history-stock-btn p-2 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
                             <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </button>
                     </div>
@@ -857,12 +873,15 @@ function handleStockFilter(clickedButton) {
 }
 
 function updateLowStockAlerts() {
-    const lowStock = AppState.masterStock.filter(item => item.newStock > 0 && item.newStock <= (item.lowStockThreshold || 5));
+    const lowStock = AppState.masterStock.filter(item => item.newStock <= (item.lowStockThreshold || 5));
     const alertList = document.getElementById('low-stock-alert-list');
     const alertBanner = document.getElementById('low-stock-alert-banner');
     if (alertList && alertBanner) {
         if (lowStock.length > 0) {
-            alertList.innerHTML = lowStock.map(item => `<li>${item.itemType} (${item.size}) - เหลือ ${item.newStock} ชิ้น</li>`).join('');
+            alertList.innerHTML = lowStock.map(item => {
+                if (item.newStock === 0) return `<li>${item.itemType} (${item.size}) - <span class="font-bold text-red-700">หมดแล้ว!</span></li>`;
+                return `<li>${item.itemType} (${item.size}) - เหลือ ${item.newStock} ชิ้น</li>`;
+            }).join('');
             alertBanner.classList.remove('hidden'); document.getElementById('stock-alert-badge')?.classList.remove('hidden');
         } else {
             alertBanner.classList.add('hidden'); document.getElementById('stock-alert-badge')?.classList.add('hidden');
