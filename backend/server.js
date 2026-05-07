@@ -8,6 +8,7 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const fs = require('fs');
 const path = require('path');
 const https = require('https'); 
+const iconv = require('iconv-lite'); // 💡 เพิ่มไลบรารีนี้สำหรับจัดการภาษาไทยจาก Excel
 
 // Models
 const User = require('./models/User');
@@ -224,7 +225,16 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
-        const content = fs.readFileSync(req.file.path, 'utf8');
+        
+        // 💡 อ่านไฟล์และแปลงรหัสภาษาไทย (แก้ปัญหาเซฟจาก Excel ปกติ)
+        const buffer = fs.readFileSync(req.file.path);
+        let content = '';
+        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+            content = buffer.toString('utf8').replace(/^\uFEFF/, '');
+        } else {
+            content = iconv.decode(buffer, 'win874'); // แปลงภาษาไทยจากระบบ Windows
+        }
+        
         const lines = content.split(/\r?\n/);
         let importedCount = 0;
         for(let i = 1; i < lines.length; i++) {
@@ -243,70 +253,113 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     } catch (err) { res.status(500).json({ error: "รูปแบบไฟล์ CSV ไม่ถูกต้อง" }); }
 });
 
-// 💡 นำเข้าประวัติเบิกย้อนหลัง (และตัดสต๊อกอัตโนมัติ)
+// 💡 นำเข้าประวัติเบิกย้อนหลัง (และตัดสต๊อกอัตโนมัติ + ดักสต๊อกล่วงหน้า)
 app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
-        const content = fs.readFileSync(req.file.path, 'utf8');
+        
+        // 💡 แปลงรหัสภาษาไทย
+        const buffer = fs.readFileSync(req.file.path);
+        let content = '';
+        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+            content = buffer.toString('utf8').replace(/^\uFEFF/, '');
+        } else {
+            content = iconv.decode(buffer, 'win874');
+        }
+        
         const lines = content.split(/\r?\n/);
-        let importedCount = 0;
-
-        for(let i = 1; i < lines.length; i++) { // ข้าม Header บรรทัดที่ 1
+        
+        // 💡 1. ตรวจสอบสต๊อกล่วงหน้าก่อนนำเข้า (Pre-check)
+        const parsedData = [];
+        const requiredStock = {};
+        
+        for(let i = 1; i < lines.length; i++) { 
             if (!lines[i].trim()) continue;
-            
-            // รูปแบบ CSV ที่คาดหวัง: Username,ItemType,Size,Quantity,Condition
             const [username, itemType, size, quantityStr, condition] = lines[i].split(',');
-
             if (username && itemType && size && quantityStr) {
-                const user = await User.findOne({ username: username.trim() });
-                if (user) {
-                    const qty = parseInt(quantityStr.trim()) || 1;
-                    const reqCondition = (condition && condition.trim().toUpperCase() === 'USED') ? 'Used' : 'New';
+                const qty = parseInt(quantityStr.trim()) || 1;
+                const reqCondition = (condition && condition.trim().toUpperCase() === 'USED') ? 'Used' : 'New';
+                
+                parsedData.push({ username: username.trim(), itemType: itemType.trim(), size: size.trim(), qty, reqCondition });
+                
+                // รวมยอดของพัสดุแต่ละประเภทและไซส์ที่ถูกเรียกเบิก
+                const key = `${itemType.trim()}|${size.trim()}|${reqCondition}`;
+                requiredStock[key] = (requiredStock[key] || 0) + qty;
+            }
+        }
 
-                    // 1. สร้างประวัติเบิก (สถานะ Approved ทันที)
-                    const newReq = new Request({
-                        requestId: generateRequestId(),
-                        requesterName: user.name,
-                        department: user.department || '-',
-                        itemType: itemType.trim(),
-                        size: size.trim(),
-                        quantity: qty,
-                        reason: 'นำเข้าข้อมูลย้อนหลัง (Import CSV)',
-                        status: 'Approved',
-                        notes: `นำเข้าอัตโนมัติ (${reqCondition === 'Used' ? 'มือสอง' : 'ของใหม่'})`
-                    });
-                    await newReq.save();
+        // เช็คกับฐานข้อมูลว่าสต๊อกพอหรือไม่
+        const shortages = [];
+        for (const key in requiredStock) {
+            const [itemType, size, condition] = key.split('|');
+            const reqQty = requiredStock[key];
+            const stock = await Stock.findOne({ itemType, size });
 
-                    // 2. ปรับหักสต๊อกอัตโนมัติ (ถ้ามีของในระบบ)
-                    const stock = await Stock.findOne({ itemType: itemType.trim(), size: size.trim() });
-                    if (stock) {
-                        if (reqCondition === 'Used') {
-                            stock.usedStock = Math.max(0, stock.usedStock - qty);
-                        } else {
-                            stock.newStock = Math.max(0, stock.newStock - qty);
-                        }
-                        await stock.save();
-
-                        // 3. สร้างประวัติ (Log) ของสต๊อก
-                        await new StockTransaction({
-                            itemType: itemType.trim(),
-                            size: size.trim(),
-                            transactionType: reqCondition === 'Used' ? 'OUT-USED' : 'OUT',
-                            quantity: -Math.abs(qty),
-                            reason: `ตัดสต๊อกอัตโนมัติ (นำเข้า CSV ย้อนหลังให้: ${user.name})`,
-                            adminUser: req.body.adminUser || 'System'
-                        }).save();
-                    }
-
-                    importedCount++;
+            if (!stock) {
+                shortages.push(`❌ ไม่พบพัสดุ: ${itemType} (ไซส์ ${size}) ในระบบ`);
+            } else {
+                if (condition === 'Used' && stock.usedStock < reqQty) {
+                    shortages.push(`❌ ${itemType} (ไซส์ ${size}) มือสอง: ต้องการ ${reqQty} ชิ้น แต่มีแค่ ${stock.usedStock} ชิ้น`);
+                } else if (condition === 'New' && stock.newStock < reqQty) {
+                    shortages.push(`❌ ${itemType} (ไซส์ ${size}) ของใหม่: ต้องการ ${reqQty} ชิ้น แต่มีแค่ ${stock.newStock} ชิ้น`);
                 }
             }
         }
+
+        // 🛑 ถ้ามีพัสดุไหนสต๊อกไม่พอ ให้ยกเลิกการนำเข้าและแจ้งเตือนทันที
+        if (shortages.length > 0) {
+            fs.unlinkSync(req.file.path); 
+            return res.status(400).json({ error: "สต๊อกไม่เพียงพอสำหรับนำเข้าข้อมูล:\n" + shortages.join('\n') });
+        }
+
+        // 💡 2. ถ้ายอดสต๊อกพอทั้งหมด เริ่มนำเข้าและตัดสต๊อกจริง
+        let importedCount = 0;
+        for (const data of parsedData) {
+            const user = await User.findOne({ username: data.username });
+            if (user) {
+                // สร้างประวัติเบิก
+                const newReq = new Request({
+                    requestId: generateRequestId(),
+                    requesterName: user.name,
+                    department: user.department || '-',
+                    itemType: data.itemType,
+                    size: data.size,
+                    quantity: data.qty,
+                    reason: 'นำเข้าข้อมูลย้อนหลัง (Import CSV)',
+                    status: 'Approved',
+                    notes: `นำเข้าอัตโนมัติ (${data.reqCondition === 'Used' ? 'มือสอง' : 'ของใหม่'})`
+                });
+                await newReq.save();
+
+                // ปรับหักสต๊อก
+                const stock = await Stock.findOne({ itemType: data.itemType, size: data.size });
+                if (stock) {
+                    if (data.reqCondition === 'Used') {
+                        stock.usedStock = Math.max(0, stock.usedStock - data.qty);
+                    } else {
+                        stock.newStock = Math.max(0, stock.newStock - data.qty);
+                    }
+                    await stock.save();
+
+                    // บันทึกลงหน้าประวัติ
+                    await new StockTransaction({
+                        itemType: data.itemType,
+                        size: data.size,
+                        transactionType: data.reqCondition === 'Used' ? 'OUT-USED' : 'OUT',
+                        quantity: -Math.abs(data.qty),
+                        reason: `ตัดสต๊อกอัตโนมัติ (นำเข้า CSV ย้อนหลังให้: ${user.name})`,
+                        adminUser: req.body.adminUser || 'System'
+                    }).save();
+                }
+                importedCount++;
+            }
+        }
+        
         fs.unlinkSync(req.file.path); 
         res.json({ success: true, count: importedCount });
     } catch (err) { 
         console.error("Import Requests Error:", err);
-        res.status(500).json({ error: "รูปแบบไฟล์ CSV ไม่ถูกต้อง" }); 
+        res.status(500).json({ error: "เกิดข้อผิดพลาดในการประมวลผลไฟล์ CSV" }); 
     }
 });
 
