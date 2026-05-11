@@ -32,6 +32,7 @@ function getImageUrl(url) {
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
     injectSuperStockModal(); 
+    injectResignModal(); 
     setupStaticEventListeners(); 
 });
 
@@ -70,18 +71,25 @@ async function handleLogin(e) {
     
     if (!username || !password) return document.getElementById('login-error').textContent = "กรุณากรอกข้อมูลให้ครบถ้วน";
 
+    if (loginBtn.dataset.isProcessing === 'true') return;
+    loginBtn.dataset.isProcessing = 'true';
+
     showLoadingButton(loginBtn, true);
     try {
         const data = await apiCall('/api/auth/login', 'POST', { username, password });
         onLoginSuccess(data);
     } catch (error) {
         showLoadingButton(loginBtn, false, 'เข้าสู่ระบบ');
+        loginBtn.dataset.isProcessing = 'false';
         document.getElementById('login-error').textContent = error.message;
     }
 }
 
 function onLoginSuccess(user) {
-    showLoadingButton(document.getElementById('login-btn'), false, 'เข้าสู่ระบบ');
+    const loginBtn = document.getElementById('login-btn');
+    showLoadingButton(loginBtn, false, 'เข้าสู่ระบบ');
+    loginBtn.dataset.isProcessing = 'false';
+
     if (user.mustChangePassword) { 
         AppState.currentUser = user; 
         openModalAnimation(document.getElementById('force-change-password-modal')); 
@@ -123,26 +131,57 @@ function handleLogout() {
 }
 
 async function handleForgotPasswordRequest() {
+    const btn = document.getElementById('check-reset-status-btn');
+    if (btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+
     const username = document.getElementById('forgot-username').value.trim();
-    if(!username) return document.getElementById('forgot-password-error').textContent = 'กรุณากรอกรหัสพนักงาน (Username)';
+    if(!username) {
+        btn.dataset.isProcessing = 'false';
+        return document.getElementById('forgot-password-error').textContent = 'กรุณากรอกรหัสพนักงาน (Username)';
+    }
+
+    showLoadingButton(btn, true);
     try {
         await apiCall('/api/auth/forgot-password', 'POST', { username });
         document.getElementById('forgot-password-stage-1').classList.add('hidden');
         document.getElementById('forgot-password-stage-2').classList.remove('hidden');
         document.getElementById('forgot-password-stage-2').innerHTML = '<div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6"><p class="text-center text-sm text-green-700 font-medium">✅ ส่งคำขอรีเซ็ตรหัสผ่านไปยังแอดมินแล้ว<br>กรุณารอแอดมินแจ้งรหัสผ่านชั่วคราวให้คุณ</p></div>';
-    } catch(e) { document.getElementById('forgot-password-error').textContent = e.message; }
+    } catch(e) { 
+        document.getElementById('forgot-password-error').textContent = e.message; 
+    } finally {
+        showLoadingButton(btn, false, 'ตรวจสอบ / ส่งคำขอ');
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 async function handleForceChangePassword() {
+    const btn = document.getElementById('force-change-password-btn');
+    if (btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+
     const pwd = document.getElementById('new-password').value;
-    if(pwd !== document.getElementById('confirm-password').value) return document.getElementById('password-change-error').textContent = 'รหัสผ่านไม่ตรงกัน';
-    if(pwd.length < 4) return document.getElementById('password-change-error').textContent = 'รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป';
+    if(pwd !== document.getElementById('confirm-password').value) {
+        btn.dataset.isProcessing = 'false';
+        return document.getElementById('password-change-error').textContent = 'รหัสผ่านไม่ตรงกัน';
+    }
+    if(pwd.length < 4) {
+        btn.dataset.isProcessing = 'false';
+        return document.getElementById('password-change-error').textContent = 'รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป';
+    }
+
+    showLoadingButton(btn, true);
     try {
         await apiCall('/api/auth/change-password', 'POST', { username: AppState.currentUser.username, newPassword: pwd });
         closeModalAnimation(document.getElementById('force-change-password-modal'));
         showNotification('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่', 'success');
         handleLogout();
-    } catch(e) { document.getElementById('password-change-error').textContent = e.message; }
+    } catch(e) { 
+        document.getElementById('password-change-error').textContent = e.message; 
+    } finally {
+        showLoadingButton(btn, false, 'ยืนยันและเข้าสู่ระบบ');
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 // ==========================================
@@ -166,7 +205,7 @@ async function loadInitialData() {
 
         if (AppState.currentUser.role === 'admin') {
             loadAdminData();
-            initImportRequestsUI(); // 💡 โหลด UI นำเข้า CSV ตอนเข้าสู่ระบบแอดมิน
+            initImportRequestsUI(); 
         }
     } catch (error) { showNotification(error.message, 'error'); }
 }
@@ -274,6 +313,10 @@ function handleReturnableItemSelection() {
 async function handleSubmitRequest(e) {
     if (e) e.preventDefault();
     const requestBtn = document.getElementById('request-btn');
+    if (requestBtn.disabled || requestBtn.dataset.isProcessing === 'true') return;
+    requestBtn.dataset.isProcessing = 'true';
+    requestBtn.disabled = true;
+
     const reasonType = document.getElementById('request-reason-type').value;
     showLoadingButton(requestBtn, true);
 
@@ -282,7 +325,11 @@ async function handleSubmitRequest(e) {
             const originalRequestId = document.getElementById('return-item-select').value;
             const quantityToReturn = parseInt(document.getElementById('return-quantity').value);
             const reasonDetails = document.getElementById('return-details').value.trim();
-            if (!originalRequestId || !reasonDetails) throw new Error('กรุณาเลือกรายการและระบุเหตุผล');
+            if (!originalRequestId || !reasonDetails) {
+                requestBtn.dataset.isProcessing = 'false';
+                requestBtn.disabled = false;
+                throw new Error('กรุณาเลือกรายการและระบุเหตุผล');
+            }
             
             await apiCall('/api/requests/return', 'POST', { originalRequestId, quantityToReturn, reasonDetails, requesterName: AppState.currentUser.name });
             onActionSuccess('ส่งคำขอคืนสำเร็จ');
@@ -295,12 +342,19 @@ async function handleSubmitRequest(e) {
                 quantity: parseInt(document.getElementById('request-quantity').value) || 0, 
                 reason: document.getElementById('request-details').value.trim()
             };
-            if (!requestData.itemType || requestData.quantity < 1 || !requestData.reason) throw new Error('กรุณากรอกข้อมูลให้ครบถ้วน');
+            if (!requestData.itemType || requestData.quantity < 1 || !requestData.reason) {
+                requestBtn.dataset.isProcessing = 'false';
+                requestBtn.disabled = false;
+                throw new Error('กรุณากรอกข้อมูลให้ครบถ้วน');
+            }
 
             await apiCall('/api/requests/new', 'POST', requestData);
             onActionSuccess('ส่งคำขอเบิกสำเร็จ กำลังรอการอนุมัติ');
         }
-    } catch (error) { onActionFailure(error); }
+    } catch (error) { 
+        onActionFailure(error); 
+        requestBtn.dataset.isProcessing = 'false';
+    }
 }
 
 function displayRequests(requests, tableId, isAdminView) {
@@ -449,7 +503,12 @@ function displayPendingPasswordResets(resets) {
     });
 }
 
+// 💡 อัปเดตฟังก์ชันอนุมัติให้มีระบบป้องกันกดเบิ้ล (Anti-Double Click)
 async function handleApproveRequest(btn) {
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+    btn.disabled = true;
+
     const id = btn.dataset.id;
     const card = btn.closest('.approval-card');
     const quantityInput = card.querySelector('.approval-quantity-input');
@@ -467,39 +526,75 @@ async function handleApproveRequest(btn) {
     const usedStock = parseInt(card.dataset.usedStock) || 0;
 
     if (isNaN(approvedQuantity) || approvedQuantity <= 0 || approvedQuantity > originalQuantity) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
         return showNotification(`จำนวนที่อนุมัติต้องอยู่ระหว่าง 1 ถึง ${originalQuantity}`, 'error');
     }
-    if (stockType === 'Used' && approvedQuantity > usedStock) return showNotification(`❌ สต็อกมือสองไม่เพียงพอ (เหลือ ${usedStock} ชิ้น)`, 'error');
-    if (stockType === 'New' && approvedQuantity > newStock) return showNotification(`❌ สต็อกของใหม่ไม่เพียงพอ (เหลือ ${newStock} ชิ้น)`, 'error');
+    if (stockType === 'Used' && approvedQuantity > usedStock) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification(`❌ สต็อกมือสองไม่เพียงพอ (เหลือ ${usedStock} ชิ้น)`, 'error');
+    }
+    if (stockType === 'New' && approvedQuantity > newStock) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification(`❌ สต็อกของใหม่ไม่เพียงพอ (เหลือ ${newStock} ชิ้น)`, 'error');
+    }
     
     showLoadingButton(btn, true);
     try {
         await apiCall('/api/admin/approve', 'POST', { requestId: id, approvedQuantity, reason, stockType, adminUser: AppState.currentUser.username });
         onAdminActionSuccess(`อนุมัติรายการสำเร็จ (ตัดสต็อก${stockType === 'Used' ? 'มือสอง' : 'ใหม่'})`);
-    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'อนุมัติคำขอ'); }
+    } catch(err) { 
+        onActionFailure(err); 
+        showLoadingButton(btn, false, 'อนุมัติคำขอ'); 
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 async function handleRejectRequest(btn) {
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+
     const id = btn.dataset.id;
     showPromptModal("กรุณาระบุเหตุผลที่ปฏิเสธ:", async (reason) => {
         showLoadingButton(btn, true);
         try {
             await apiCall('/api/admin/reject', 'POST', { requestId: id, reason, adminUser: AppState.currentUser.username });
             onAdminActionSuccess('ปฏิเสธรายการสำเร็จ');
-        } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'ปฏิเสธ'); }
+        } catch(err) { 
+            onActionFailure(err); 
+            showLoadingButton(btn, false, 'ปฏิเสธ'); 
+            btn.dataset.isProcessing = 'false'; 
+        }
+    }, () => {
+        btn.dataset.isProcessing = 'false';
     });
 }
 
 async function handleProcessReturn(btn) {
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+    btn.disabled = true;
+
     const id = btn.dataset.id;
     const returnConditionEl = document.querySelector(`input[name="return-condition-${id}"]:checked`);
     const disbursementTypeEl = document.querySelector(`input[name="disburse-type-${id}"]:checked`);
-    if (!returnConditionEl || !disbursementTypeEl) return showNotification('กรุณาเลือกตัวเลือกให้ครบถ้วน', 'error');
+    
+    if (!returnConditionEl || !disbursementTypeEl) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification('กรุณาเลือกตัวเลือกให้ครบถ้วน', 'error');
+    }
     
     let damageReason = '';
     if (returnConditionEl.value === 'Damaged') {
         damageReason = document.getElementById(`damage-reason-${id}`).value.trim();
-        if (!damageReason) return showNotification('กรุณากรอกเหตุผลที่ชำรุด', 'error');
+        if (!damageReason) {
+            btn.dataset.isProcessing = 'false';
+            btn.disabled = false;
+            return showNotification('กรุณากรอกเหตุผลที่ชำรุด', 'error');
+        }
     }
     
     showLoadingButton(btn, true);
@@ -510,7 +605,11 @@ async function handleProcessReturn(btn) {
             await apiCall('/api/admin/return-disburse', 'POST', { requestId: id, returnCondition: returnConditionEl.value, disbursementType: disbursementTypeEl.value, damageReason, adminUser: AppState.currentUser.username });
         }
         onAdminActionSuccess('ดำเนินการรับคืนสำเร็จ');
-    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'ยืนยันรับคืน'); }
+    } catch(err) { 
+        onActionFailure(err); 
+        showLoadingButton(btn, false, 'ยืนยันรับคืน'); 
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 
@@ -678,7 +777,6 @@ function displayStockSummary(stockData) {
     const contentHeader = document.createElement('div');
     contentHeader.className = 'p-6 border-b border-slate-200 bg-slate-50 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between';
     
-    // 💡 อัปเดตปรับขนาดตัวเลขหมวดหมู่ใหญ่ให้ใหญ่ชัดเจนขึ้น (text-3xl)
     contentHeader.innerHTML = `
         <div class="flex items-center gap-4">
             <div class="w-14 h-14 rounded-xl border border-slate-200 shadow-sm bg-white flex items-center justify-center text-2xl text-indigo-500">📁</div>
@@ -732,7 +830,6 @@ function displayStockSummary(stockData) {
         if (hasOutStock) alertBadge = '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-600 text-white animate-pulse border border-red-700">สต๊อกหมด</span>';
         else if (hasLowStock) alertBadge = '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 animate-pulse border border-red-200">สต๊อกต่ำ</span>';
         
-        // 💡 อัปเดตปรับขนาดตัวเลขยอดรวมแต่ละพัสดุให้ใหญ่และหนาขึ้น (text-xl)
         typeHeader.innerHTML = `
             <div class="flex items-center gap-4">
                 <img src="${img}" class="w-12 h-12 rounded-lg object-cover border border-slate-200 shadow-sm bg-white">
@@ -801,7 +898,6 @@ function displayStockSummary(stockData) {
             if (isOut) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white border border-red-700">หมด</span>';
             else if (isLow) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">ใกล้หมด</span>';
             
-            // 💡 อัปเดตปรับขนาดตัวเลขในตาราง (คงเหลือตามไซส์) ให้ใหญ่ขึ้นและเด่นขึ้น
             tr.innerHTML = `
                 <td class="px-6 py-4 whitespace-nowrap">
                     <span class="font-bold text-slate-800 text-[15px]">ไซส์ ${item.size}</span>
@@ -887,6 +983,173 @@ function updateLowStockAlerts() {
             alertBanner.classList.add('hidden'); document.getElementById('stock-alert-badge')?.classList.add('hidden');
         }
     }
+}
+
+// 💡 1. ฟังก์ชันสร้างหน้าต่างจัดการพนักงานลาออก (Resign Modal)
+function injectResignModal() {
+    if (document.getElementById('resign-user-modal')) return;
+    const modalHTML = `
+    <div id="resign-user-modal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm overflow-y-auto h-full w-full z-[85] flex items-center justify-center transition-opacity opacity-0">
+        <div class="relative mx-auto p-0 border border-slate-100 w-full max-w-4xl shadow-2xl rounded-2xl bg-white modal-container scale-95 transition-all overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-orange-500">
+                <h3 class="text-lg font-black text-white flex items-center gap-2">
+                    <span class="text-xl">🚪</span> ทำรายการพนักงานลาออก
+                </h3>
+                <button id="close-resign-modal-btn" class="text-orange-100 hover:text-white transition-colors bg-transparent border-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto bg-slate-50 flex-grow">
+                <div class="mb-4">
+                    <h4 class="text-xl font-bold text-slate-800">รหัสพนักงาน: <span id="resign-username-display" class="text-orange-600"></span></h4>
+                    <p class="text-sm text-slate-500 mt-1">กรุณาตรวจสอบและจัดการพัสดุที่พนักงานถือครองอยู่ ก่อนทำการยืนยันปิดบัญชี</p>
+                </div>
+                
+                <input type="hidden" id="resign-target-username">
+                
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto max-h-[50vh]">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">รายการพัสดุ (ไซส์)</th>
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">จำนวนที่เบิกไป</th>
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase w-48">การคืนของ</th>
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase w-40">สภาพของที่คืน</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resign-items-tbody" class="bg-white divide-y divide-slate-100">
+                                <!-- แถวพัสดุจะถูกสร้างผ่าน JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="resign-no-items-msg" class="hidden mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                    <p class="text-emerald-700 font-bold">พนักงานคนนี้ไม่มีพัสดุค้างในระบบ สามารถกดยืนยันปิดบัญชีได้ทันที</p>
+                </div>
+
+            </div>
+            
+            <div class="p-4 border-t border-slate-100 bg-white flex justify-between items-center rounded-b-2xl shadow-inner">
+                <span class="text-xs font-bold text-slate-500">* เมื่อกดยืนยัน บัญชีจะถูกปิดใช้งาน (Inactive) ทันที</span>
+                <div class="flex gap-3">
+                    <button id="cancel-resign-btn" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">ยกเลิก</button>
+                    <button id="confirm-resign-btn" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-md shadow-orange-200 transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        ยืนยันการลาออก
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    const closeModal = () => closeModalAnimation(document.getElementById('resign-user-modal'));
+    document.getElementById('close-resign-modal-btn').addEventListener('click', closeModal);
+    document.getElementById('cancel-resign-btn').addEventListener('click', closeModal);
+    
+    document.getElementById('confirm-resign-btn').addEventListener('click', async (e) => {
+        const btn = e.target;
+        if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+        btn.dataset.isProcessing = 'true';
+        btn.disabled = true;
+
+        const username = document.getElementById('resign-target-username').value;
+        const resolutions = [];
+        
+        document.querySelectorAll('.resign-item-row').forEach(row => {
+            const reqId = row.dataset.id;
+            const action = row.querySelector('.action-radio:checked').value; 
+            const condition = row.querySelector('.condition-select').value; 
+            resolutions.push({ requestId: reqId, action, condition });
+        });
+
+        showLoadingButton(btn, true);
+        try {
+            await apiCall(`/api/users/${username}/resign`, 'POST', { 
+                adminUser: AppState.currentUser.username, 
+                resolutions 
+            });
+            onAdminActionSuccess(`ปิดบัญชีและจัดการพัสดุสำเร็จ`);
+            closeModal();
+        } catch(err) { 
+            onActionFailure(err); 
+            showLoadingButton(btn, false, 'ยืนยันการลาออก'); 
+            btn.dataset.isProcessing = 'false';
+        }
+    });
+}
+
+function openResignModal(username, holdings) {
+    const modal = document.getElementById('resign-user-modal');
+    if (!modal) return;
+    
+    document.getElementById('resign-username-display').textContent = username;
+    document.getElementById('resign-target-username').value = username;
+    
+    const tbody = document.getElementById('resign-items-tbody');
+    tbody.innerHTML = '';
+    
+    if (holdings.length === 0) {
+        document.getElementById('resign-no-items-msg').classList.remove('hidden');
+        tbody.closest('.bg-white.border').classList.add('hidden'); 
+    } else {
+        document.getElementById('resign-no-items-msg').classList.add('hidden');
+        tbody.closest('.bg-white.border').classList.remove('hidden'); 
+        
+        holdings.forEach((req, index) => {
+            const tr = document.createElement('tr');
+            tr.className = 'resign-item-row hover:bg-slate-50 transition-colors';
+            tr.dataset.id = req.requestId;
+            
+            tr.innerHTML = `
+                <td class="px-4 py-3 whitespace-nowrap">
+                    <p class="font-bold text-slate-800 text-sm">${req.itemType}</p>
+                    <p class="text-[11px] text-slate-500 font-medium">ไซส์: <span class="font-bold text-slate-700">${req.size}</span> | รหัส: ${req.requestId}</p>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <span class="text-base font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${req.quantity}</span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <div class="flex flex-col space-y-1.5 items-start bg-slate-50 p-2 rounded-lg border border-slate-200">
+                        <label class="inline-flex items-center text-xs font-bold text-emerald-700 cursor-pointer">
+                            <input type="radio" name="action-${req.requestId}" value="RETURN" checked class="action-radio form-radio h-4 w-4 text-emerald-600">
+                            <span class="ml-2">ได้คืนของ</span>
+                        </label>
+                        <label class="inline-flex items-center text-xs font-bold text-rose-700 cursor-pointer">
+                            <input type="radio" name="action-${req.requestId}" value="WRITE_OFF" class="action-radio form-radio h-4 w-4 text-rose-600">
+                            <span class="ml-2">ไม่ได้คืน (ตัดจำหน่าย)</span>
+                        </label>
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <select class="condition-select w-full py-1.5 px-2 bg-white border border-slate-300 rounded-md text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700">
+                        <option value="Used">♻️ สภาพใช้ต่อได้ (มือสอง)</option>
+                        <option value="Damaged">🗑️ สภาพชำรุด (ทิ้ง)</option>
+                    </select>
+                </td>
+            `;
+            tbody.appendChild(tr);
+            
+            const radios = tr.querySelectorAll('.action-radio');
+            const conditionSelect = tr.querySelector('.condition-select');
+            radios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    if (e.target.value === 'WRITE_OFF') {
+                        conditionSelect.disabled = true;
+                        conditionSelect.classList.add('opacity-50', 'bg-slate-100', 'cursor-not-allowed');
+                    } else {
+                        conditionSelect.disabled = false;
+                        conditionSelect.classList.remove('opacity-50', 'bg-slate-100', 'cursor-not-allowed');
+                    }
+                });
+            });
+        });
+    }
+    
+    openModalAnimation(modal);
 }
 
 function injectSuperStockModal() {
@@ -1000,6 +1263,10 @@ function injectSuperStockModal() {
 
     document.getElementById('save-super-stock').addEventListener('click', async (e) => {
         const btn = e.target;
+        if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+        btn.dataset.isProcessing = 'true';
+        btn.disabled = true;
+
         const data = {
             itemType: document.getElementById('super-stock-type').value.trim(), 
             size: document.getElementById('super-stock-size').value.trim(),
@@ -1014,13 +1281,23 @@ function injectSuperStockModal() {
             adminUser: AppState.currentUser.username
         };
 
-        if (!data.itemType || !data.size || !data.category) return showNotification('กรุณากรอกข้อมูลหลักให้ครบ', 'error');
+        if (!data.itemType || !data.size || !data.category) {
+            btn.dataset.isProcessing = 'false';
+            btn.disabled = false;
+            return showNotification('กรุณากรอกข้อมูลหลักให้ครบ', 'error');
+        }
         showLoadingButton(btn, true);
         try { 
             await apiCall('/api/stock', 'POST', data); 
             onAdminActionSuccess('บันทึกพัสดุสำเร็จ'); 
             closeModal();
-        } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึกข้อมูล'); }
+            btn.dataset.isProcessing = 'false';
+            btn.disabled = false;
+        } catch(err) { 
+            onActionFailure(err); 
+            showLoadingButton(btn, false, 'บันทึกข้อมูล'); 
+            btn.dataset.isProcessing = 'false';
+        }
     });
 }
 
@@ -1092,14 +1369,22 @@ function openSuperStockModal(isEdit = false, item = null) {
 // 👥 9. ADMIN: USER MANAGEMENT
 // ==========================================
 async function handleImportUsersCSV() {
+    const btn = document.getElementById('import-users-btn');
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+    btn.disabled = true;
+
     const fileInput = document.getElementById('csv-file-input');
     const file = fileInput.files[0];
-    if (!file) return showNotification('กรุณาเลือกไฟล์ CSV ก่อน', 'error');
+    if (!file) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification('กรุณาเลือกไฟล์ CSV ก่อน', 'error');
+    }
 
     const formData = new FormData();
     formData.append('csvfile', file);
     
-    const btn = document.getElementById('import-users-btn');
     showLoadingButton(btn, true);
     try {
         const response = await fetch(`${API_BASE_URL}/api/users/import`, { method: 'POST', body: formData });
@@ -1114,8 +1399,13 @@ async function handleImportUsersCSV() {
             console.error("Server Error:", text);
             throw new Error('เซิร์ฟเวอร์ขัดข้อง (ไฟล์อาจมีปัญหา หรือ API ผิดพลาด)');
         }
-    } catch(e) { showNotification(e.message, 'error'); } 
-    finally { showLoadingButton(btn, false, 'นำเข้าข้อมูล (Import)'); fileInput.value = ''; }
+    } catch(e) { 
+        showNotification(e.message, 'error'); 
+    } finally { 
+        showLoadingButton(btn, false, 'นำเข้าข้อมูล (Import)'); 
+        fileInput.value = ''; 
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 function onUsersReceived(users) { AppState.allUsersData = users; renderUsersTable(); }
@@ -1134,7 +1424,7 @@ function renderUsersTable() {
         pageData.forEach(user => {
             const stClass = user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-red-600 border border-red-200';
             const stText = user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน';
-            tbody.innerHTML += `<tr><td class="p-3 text-sm font-bold text-indigo-600"><a href="#" class="clickable-username hover:underline" data-username="${user.username}">${user.username}</a></td><td class="p-3 text-sm font-medium text-slate-700">${user.name}</td><td class="p-3 text-sm text-slate-500">${user.department || '-'}</td><td class="p-3 text-center"><span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">${user.role}</span></td><td class="p-3 text-center"><span class="px-2.5 py-1 font-bold text-[10px] rounded-lg ${stClass}">${stText}</span></td><td class="p-3 text-center space-x-1.5 whitespace-nowrap"><button class="edit-user-btn bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">แก้ไข</button><button class="reset-password-btn bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">รหัส</button><button class="delete-user-btn bg-rose-50 hover:bg-rose-100 border border-rose-200 text-red-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">ลบ</button></td></tr>`;
+            tbody.innerHTML += `<tr><td class="p-3 text-sm font-bold text-indigo-600"><a href="#" class="clickable-username hover:underline" data-username="${user.username}">${user.username}</a></td><td class="p-3 text-sm font-medium text-slate-700">${user.name}</td><td class="p-3 text-sm text-slate-500">${user.department || '-'}</td><td class="p-3 text-center"><span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">${user.role}</span></td><td class="p-3 text-center"><span class="px-2.5 py-1 font-bold text-[10px] rounded-lg ${stClass}">${stText}</span></td><td class="p-3 text-center space-x-1.5 whitespace-nowrap"><button class="edit-user-btn bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">แก้ไข</button><button class="reset-password-btn bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">รหัส</button><button class="resign-user-btn bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">ลาออก</button><button class="delete-user-btn bg-rose-50 hover:bg-rose-100 border border-rose-200 text-red-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors" data-username="${user.username}">ลบ</button></td></tr>`;
         });
     }
     if(document.getElementById('user-page-info')) document.getElementById('user-page-info').textContent = `หน้า ${AppState.pagination.users} จาก ${totalPages || 1}`;
@@ -1148,6 +1438,10 @@ function changeUserPage(dir) { AppState.pagination.users += dir; renderUsersTabl
 async function handleSaveUser(e) {
     if(e) e.preventDefault();
     const btn = document.getElementById('save-user-btn');
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+    btn.disabled = true;
+
     const userData = { 
         name: document.getElementById('user-form-name').value.trim(), 
         department: document.getElementById('user-form-department').value.trim(), 
@@ -1157,12 +1451,20 @@ async function handleSaveUser(e) {
         status: document.getElementById('user-form-status').value 
     };
     
-    if (!userData.name || !userData.username || !userData.password) return showNotification('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
+    if (!userData.name || !userData.username || !userData.password) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
+    }
     showLoadingButton(btn, true);
     try { 
         await apiCall('/api/users', 'POST', { userData, adminUser: AppState.currentUser.username, originalUsername: AppState.currentEditUser }); 
         onAdminActionSuccess('บันทึกผู้ใช้สำเร็จ'); 
-    } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
+    } catch(err) { 
+        onActionFailure(err); 
+        showLoadingButton(btn, false, 'บันทึก'); 
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 function populateUserForm(username) {
@@ -1241,17 +1543,24 @@ function changeHistoryPage(dir) { AppState.pagination.history += dir; renderAllH
 function handleLogSearch() { AppState.pagination.logs = 1; renderAdminLogTable(); } 
 function changeLogPage(dir) { AppState.pagination.logs += dir; renderAdminLogTable(); } 
 
-// 💡 ฟังก์ชันใหม่สำหรับอัปโหลด CSV นำเข้าประวัติเบิกย้อนหลัง
 async function handleImportRequestsCSV() {
+    const btn = document.getElementById('import-requests-btn');
+    if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+    btn.dataset.isProcessing = 'true';
+    btn.disabled = true;
+
     const fileInput = document.getElementById('csv-requests-input');
     const file = fileInput?.files[0];
-    if (!file) return showNotification('กรุณาเลือกไฟล์ CSV ก่อน', 'error');
+    if (!file) {
+        btn.dataset.isProcessing = 'false';
+        btn.disabled = false;
+        return showNotification('กรุณาเลือกไฟล์ CSV ก่อน', 'error');
+    }
 
     const formData = new FormData();
     formData.append('csvfile', file);
     formData.append('adminUser', AppState.currentUser.username);
     
-    const btn = document.getElementById('import-requests-btn');
     showLoadingButton(btn, true);
     try {
         const response = await fetch(`${API_BASE_URL}/api/requests/import`, { method: 'POST', body: formData });
@@ -1266,11 +1575,15 @@ async function handleImportRequestsCSV() {
             console.error("Server Error:", text);
             throw new Error('เซิร์ฟเวอร์ขัดข้อง (ไฟล์อาจมีปัญหา หรือ API ผิดพลาด)');
         }
-    } catch(e) { showNotification(e.message, 'error'); } 
-    finally { showLoadingButton(btn, false, 'นำเข้าข้อมูล'); if(fileInput) fileInput.value = ''; }
+    } catch(e) { 
+        showNotification(e.message, 'error'); 
+    } finally { 
+        showLoadingButton(btn, false, 'นำเข้าข้อมูล'); 
+        if(fileInput) fileInput.value = ''; 
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
-// 💡 สร้าง UI กล่องสำหรับอัปโหลด CSV ไว้ในแท็บประวัติ
 function initImportRequestsUI() {
     const historyView = document.getElementById('content-history');
     if (historyView && !document.getElementById('import-requests-container')) {
@@ -1290,10 +1603,7 @@ function initImportRequestsUI() {
                 <button id="import-requests-btn" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-sm transition-all whitespace-nowrap">นำเข้าข้อมูล</button>
             </div>
         `;
-        // แทรกลงไปใต้ส่วนหัวของแท็บประวัติ
         historyView.insertBefore(importDiv, historyView.children[1]);
-
-        // ผูก Event
         document.getElementById('import-requests-btn').addEventListener('click', handleImportRequestsCSV);
     }
 }
@@ -1363,39 +1673,62 @@ function setupStaticEventListeners() {
 
     const oldToggleBtn = document.getElementById('toggle-stock-form-btn');
     if (oldToggleBtn && oldToggleBtn.parentElement) {
-        // ซ่อนกล่องเดิมที่กินพื้นที่เยอะๆ ทิ้งไปเลย
         oldToggleBtn.parentElement.style.display = 'none';
     }
     const oldFormArea = document.getElementById('stock-form-content');
     if (oldFormArea) oldFormArea.style.display = 'none';
 
-    // ---- Event Delegation (ปุ่มที่ถูกสร้างมาทีหลังด้วย Javascript) ----
+    // ---- Event Delegation ----
     document.addEventListener('click', async (e) => {
         if (!AppState.currentUser) return;
         
         if (e.target.matches('.approve-reset-btn')) {
-            const id = e.target.dataset.id; const user = e.target.dataset.user;
+            const btn = e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
+            const id = btn.dataset.id; const user = btn.dataset.user;
             showPromptModal(`ตั้งรหัสผ่านชั่วคราวให้ ${user}:`, async (pwd) => {
-                if(pwd.length < 4) return showNotification("รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป", "error");
-                showLoadingButton(e.target, true);
+                if(pwd.length < 4) {
+                    btn.dataset.isProcessing = 'false';
+                    return showNotification("รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป", "error");
+                }
+                showLoadingButton(btn, true);
                 try {
                     await apiCall('/api/admin/approve-reset', 'POST', { resetId: id, username: user, newPassword: pwd, adminUser: AppState.currentUser.username });
                     onAdminActionSuccess(`อนุมัติรีเซ็ตรหัสผ่านสำเร็จ`);
-                } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'อนุมัติ / ตั้งรหัสใหม่'); }
-            });
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, 'อนุมัติ / ตั้งรหัสใหม่'); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
         }
-        else if (e.target.matches('.approve-btn') || e.target.closest('.approve-btn')) handleApproveRequest(e.target.closest('.approve-btn') || e.target);
-        else if (e.target.matches('.reject-btn') || e.target.closest('.reject-btn')) handleRejectRequest(e.target.closest('.reject-btn') || e.target);
-        else if (e.target.matches('.process-return-btn') || e.target.closest('.process-return-btn')) handleProcessReturn(e.target.closest('.process-return-btn') || e.target);
+        else if (e.target.matches('.approve-btn') || e.target.closest('.approve-btn')) {
+            handleApproveRequest(e.target.closest('.approve-btn') || e.target);
+        }
+        else if (e.target.matches('.reject-btn') || e.target.closest('.reject-btn')) {
+            handleRejectRequest(e.target.closest('.reject-btn') || e.target);
+        }
+        else if (e.target.matches('.process-return-btn') || e.target.closest('.process-return-btn')) {
+            handleProcessReturn(e.target.closest('.process-return-btn') || e.target);
+        }
         else if (e.target.matches('.reject-return-btn') || e.target.closest('.reject-return-btn')) {
             const btn = e.target.closest('.reject-return-btn') || e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
             showPromptModal("เหตุผลที่ปฏิเสธการคืน:", async (reason) => {
                 showLoadingButton(btn, true);
                 try {
                     await apiCall('/api/admin/reject', 'POST', { requestId: btn.dataset.id, reason, adminUser: AppState.currentUser.username });
                     onAdminActionSuccess('ปฏิเสธการคืนสำเร็จ');
-                } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'ปฏิเสธ'); }
-            });
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, 'ปฏิเสธ'); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
         }
         else if (e.target.matches('.edit-stock-btn') || e.target.closest('.edit-stock-btn')) {
             const btn = e.target.closest('.edit-stock-btn') || e.target;
@@ -1404,16 +1737,26 @@ function setupStaticEventListeners() {
         }
         else if (e.target.matches('.receive-stock-btn') || e.target.closest('.receive-stock-btn')) {
             const btn = e.target.closest('.receive-stock-btn') || e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
             const type = btn.dataset.type; const size = btn.dataset.size;
             showPromptModal(`รับของเข้า: ${type} (${size})\nระบุจำนวน (ชิ้น):`, async (qty) => {
                 const num = parseInt(qty);
-                if (isNaN(num) || num <= 0) return showNotification('ระบุตัวเลขให้ถูกต้อง', 'error');
+                if (isNaN(num) || num <= 0) {
+                    btn.dataset.isProcessing = 'false';
+                    return showNotification('ระบุตัวเลขให้ถูกต้อง', 'error');
+                }
                 showLoadingButton(btn, true);
                 try {
                     await apiCall('/api/stock/transaction', 'POST', { itemType: type, size, transactionType: 'IN', quantity: num, reason: 'รับเข้าใหม่', adminUser: AppState.currentUser.username });
                     onAdminActionSuccess(`รับเข้าสำเร็จ`);
-                } catch(err) { onActionFailure(err); showLoadingButton(btn, false, '+ รับเข้า'); }
-            });
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, '+ รับเข้า'); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
         }
         else if (e.target.matches('.adjust-stock-btn') || e.target.closest('.adjust-stock-btn')) {
             const btn = e.target.closest('.adjust-stock-btn') || e.target;
@@ -1433,9 +1776,17 @@ function setupStaticEventListeners() {
         }
         else if (e.target.closest('#confirm-advanced-adjust-btn')) {
             const btn = document.getElementById('confirm-advanced-adjust-btn');
+            if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+            btn.disabled = true;
+
             const target = document.getElementById('adjust-target-id').value.split('|');
             const qty = parseInt(document.getElementById('adjust-qty-input').value);
-            if (isNaN(qty) || qty < 0) return showNotification('กรุณากรอกตัวเลข', 'error');
+            if (isNaN(qty) || qty < 0) {
+                btn.dataset.isProcessing = 'false';
+                btn.disabled = false;
+                return showNotification('กรุณากรอกตัวเลข', 'error');
+            }
 
             showLoadingButton(btn, true);
             try {
@@ -1448,8 +1799,13 @@ function setupStaticEventListeners() {
                 });
                 onAdminActionSuccess(`ปรับปรุงสต๊อกสำเร็จ`);
                 closeModalAnimation(document.getElementById('advanced-adjust-modal'));
-            } catch(err) { onActionFailure(err); showLoadingButton(btn, false, 'บันทึก'); }
+            } catch(err) { 
+                onActionFailure(err); 
+                showLoadingButton(btn, false, 'บันทึก'); 
+                btn.dataset.isProcessing = 'false'; 
+            }
         }
+        // 💡 2. ปรับปรุงปุ่มดูความเคลื่อนไหวสต๊อก ให้มีระบบ Tab กรองข้อมูล
         else if (e.target.matches('.history-stock-btn') || e.target.closest('.history-stock-btn')) {
             const btn = e.target.closest('.history-stock-btn') || e.target;
             const type = btn.dataset.type; const size = btn.dataset.size;
@@ -1461,39 +1817,150 @@ function setupStaticEventListeners() {
             
             try {
                 const history = await apiCall(`/api/stock/history?itemType=${encodeURIComponent(type)}&size=${encodeURIComponent(size)}`);
-                let html = '<div class="overflow-hidden border border-slate-200 rounded-xl shadow-sm"><table class="min-w-full divide-y divide-slate-200"><thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เวลา</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">ประเภท</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">จำนวน</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เหตุผล</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">แอดมิน</th></tr></thead><tbody class="bg-white divide-y divide-slate-100">';
-                if(history.length === 0) html = '<div class="text-center p-8 bg-white border border-slate-200 rounded-xl"><p class="text-slate-500 font-medium">ไม่มีประวัติความเคลื่อนไหว</p></div>';
-                else {
+                
+                // สร้างส่วนปุ่ม Tab
+                let html = `
+                    <div class="flex gap-2 mb-4 overflow-x-auto pb-2 border-b border-slate-200">
+                        <button class="sh-tab-btn active px-4 py-2 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600 whitespace-nowrap" data-filter="all">ทั้งหมด</button>
+                        <button class="sh-tab-btn px-4 py-2 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:text-slate-700 whitespace-nowrap" data-filter="in">รับเข้า</button>
+                        <button class="sh-tab-btn px-4 py-2 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:text-slate-700 whitespace-nowrap" data-filter="out">เบิกจ่าย</button>
+                        <button class="sh-tab-btn px-4 py-2 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:text-slate-700 whitespace-nowrap" data-filter="return">รับคืน</button>
+                        <button class="sh-tab-btn px-4 py-2 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:text-slate-700 whitespace-nowrap" data-filter="adjust">ปรับยอด</button>
+                    </div>
+                `;
+
+                html += '<div class="overflow-hidden border border-slate-200 rounded-xl shadow-sm"><table class="min-w-full divide-y divide-slate-200"><thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เวลา</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">ประเภท</th><th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">จำนวน</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">เหตุผล</th><th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">แอดมิน</th></tr></thead><tbody class="bg-white divide-y divide-slate-100">';
+                
+                if(history.length === 0) {
+                    html += '<tr id="sh-empty-row"><td colspan="5"><div class="text-center p-8 bg-white"><p class="text-slate-500 font-medium">ไม่มีประวัติความเคลื่อนไหว</p></div></td></tr>';
+                } else {
+                    html += '<tr id="sh-empty-row" class="hidden"><td colspan="5"><div class="text-center p-8 bg-white"><p class="text-slate-500 font-medium">ไม่มีข้อมูลในหมวดหมู่นี้</p></div></td></tr>';
                     history.forEach(log => {
-                        let badgeColor = log.transactionType === 'IN' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : log.transactionType.includes('OUT') ? 'bg-rose-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200';
+                        let badgeColor = '';
+                        let filterGroup = 'all ';
+                        if (log.transactionType === 'IN') {
+                            badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+                            filterGroup += 'in ';
+                        } else if (log.transactionType.startsWith('OUT')) {
+                            badgeColor = 'bg-rose-100 text-red-700 border-red-200';
+                            filterGroup += 'out ';
+                        } else if (log.transactionType.startsWith('RETURN')) {
+                            badgeColor = 'bg-indigo-100 text-indigo-700 border-indigo-200';
+                            filterGroup += 'return ';
+                        } else {
+                            badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
+                            filterGroup += 'adjust ';
+                        }
+
                         let qtyColor = log.quantity > 0 ? 'text-emerald-600 bg-emerald-50' : log.quantity < 0 ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50';
-                        html += `<tr><td class="p-3 text-xs text-slate-500 whitespace-nowrap">${new Date(log.createdAt).toLocaleString()}</td><td class="p-3 text-center"><span class="px-2.5 py-1 rounded-md text-[10px] font-bold border ${badgeColor}">${log.transactionType}</span></td><td class="p-3 text-center"><span class="px-3 py-1 rounded-lg text-sm font-black ${qtyColor}">${log.quantity > 0 ? '+'+log.quantity : log.quantity}</span></td><td class="p-3 text-xs text-slate-700 font-medium">${log.reason || '-'}</td><td class="p-3 text-xs font-semibold text-indigo-600">${log.adminUser}</td></tr>`;
+
+                        html += `<tr class="sh-row" data-groups="${filterGroup}"><td class="p-3 text-xs text-slate-500 whitespace-nowrap">${new Date(log.createdAt).toLocaleString()}</td><td class="p-3 text-center"><span class="px-2.5 py-1 rounded-md text-[10px] font-bold border ${badgeColor}">${log.transactionType}</span></td><td class="p-3 text-center"><span class="px-3 py-1 rounded-lg text-sm font-black ${qtyColor}">${log.quantity > 0 ? '+'+log.quantity : log.quantity}</span></td><td class="p-3 text-xs text-slate-700 font-medium">${log.reason || '-'}</td><td class="p-3 text-xs font-semibold text-indigo-600">${log.adminUser}</td></tr>`;
                     });
-                    html += '</tbody></table></div>';
                 }
+                html += '</tbody></table></div>';
                 document.getElementById('stock-history-modal-content').innerHTML = html;
+
+                // ผูก Event ให้ปุ่ม Tab
+                const tabs = document.querySelectorAll('.sh-tab-btn');
+                const rows = document.querySelectorAll('.sh-row');
+                const emptyRow = document.getElementById('sh-empty-row');
+
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', (ev) => {
+                        tabs.forEach(t => {
+                            t.classList.remove('text-indigo-600', 'border-indigo-600');
+                            t.classList.add('text-slate-500', 'border-transparent');
+                        });
+                        ev.target.classList.remove('text-slate-500', 'border-transparent');
+                        ev.target.classList.add('text-indigo-600', 'border-indigo-600');
+
+                        const filter = ev.target.dataset.filter;
+                        let visibleCount = 0;
+
+                        rows.forEach(row => {
+                            if (row.dataset.groups.includes(filter + ' ')) {
+                                row.style.display = '';
+                                visibleCount++;
+                            } else {
+                                row.style.display = 'none';
+                            }
+                        });
+
+                        if (emptyRow) {
+                            emptyRow.classList.toggle('hidden', visibleCount > 0);
+                        }
+                    });
+                });
+
             } catch(e) { document.getElementById('stock-history-modal-content').innerHTML = '<p class="text-red-500 text-center">เกิดข้อผิดพลาด</p>'; }
         }
         else if (e.target.matches('.edit-user-btn')) populateUserForm(e.target.dataset.username);
         else if (e.target.matches('.reset-password-btn')) {
+            const btn = e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
             showPromptModal(`กรอกรหัสผ่านใหม่:`, async (pwd) => {
-                if (pwd.length < 4) return showNotification("รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป", "error");
-                showLoadingButton(e.target, true);
+                if (pwd.length < 4) {
+                    btn.dataset.isProcessing = 'false';
+                    return showNotification("รหัสผ่านต้องมี 4 ตัวอักษรขึ้นไป", "error");
+                }
+                showLoadingButton(btn, true);
                 try {
-                    await apiCall('/api/auth/change-password', 'POST', { username: e.target.dataset.username, newPassword: pwd, forceChange: true });
+                    await apiCall('/api/auth/change-password', 'POST', { username: btn.dataset.username, newPassword: pwd, forceChange: true });
                     onAdminActionSuccess(`รีเซ็ตรหัสผ่านสำเร็จ`);
-                } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'รหัส'); }
-            });
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, 'รหัส'); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
+        }
+        else if (e.target.matches('.resign-user-btn')) {
+            const btn = e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
+            const username = btn.dataset.username;
+            if (username === AppState.currentUser.username) {
+                btn.dataset.isProcessing = 'false';
+                return showNotification('ไม่สามารถทำรายการให้ตัวเองได้', 'error');
+            }
+
+            showLoadingButton(btn, true);
+            try {
+                const requests = await apiCall(`/api/requests/me?username=${username}`);
+                const holdings = requests.filter(r => r.status === 'Approved' && r.quantity > 0);
+                
+                showLoadingButton(btn, false, 'ลาออก');
+                openResignModal(username, holdings); 
+                btn.dataset.isProcessing = 'false';
+            } catch(err) {
+                onActionFailure(err);
+                showLoadingButton(btn, false, 'ลาออก');
+                btn.dataset.isProcessing = 'false';
+            }
         }
         else if (e.target.matches('.delete-user-btn')) {
-            if (e.target.dataset.username === AppState.currentUser.username) return showNotification('ไม่สามารถลบตัวเองได้', 'error');
+            const btn = e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
+            if (btn.dataset.username === AppState.currentUser.username) {
+                btn.dataset.isProcessing = 'false';
+                return showNotification('ไม่สามารถลบตัวเองได้', 'error');
+            }
             showConfirmModal(`ยืนยันลบผู้ใช้?`, async () => {
-                showLoadingButton(e.target, true);
+                showLoadingButton(btn, true);
                 try {
-                    await apiCall(`/api/users/${e.target.dataset.username}`, 'DELETE', { adminUser: AppState.currentUser.username });
+                    await apiCall(`/api/users/${btn.dataset.username}`, 'DELETE', { adminUser: AppState.currentUser.username });
                     onAdminActionSuccess('ลบสำเร็จ');
-                } catch(err) { onActionFailure(err); showLoadingButton(e.target, false, 'ลบ'); }
-            });
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, 'ลบ'); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
         }
         else if (e.target.matches('.view-history-btn') || e.target.matches('.clickable-username')) {
             e.preventDefault();
@@ -1580,13 +2047,9 @@ function showNotification(message, type = 'success') {
     const el = document.getElementById('notification');
     if(!el) return;
     
-    // 💡 แปลงการขึ้นบรรทัดใหม่ให้เป็น <br> เพื่อโชว์รายการพัสดุที่ขาดสต๊อก
     document.getElementById('notification-message').innerHTML = message.replace(/\n/g, '<br>');
-    
     el.classList.remove('bg-red-500', 'bg-emerald-500', 'hidden'); 
     el.classList.add(type === 'error' ? 'bg-red-500' : 'bg-emerald-500');
-    
-    // ถ้าเป็น Error ให้โชว์นานขึ้น (8 วินาที) จะได้อ่านทัน
     setTimeout(() => el.classList.add('hidden'), type === 'error' ? 8000 : 4000);
 }
 
@@ -1621,9 +2084,17 @@ function onActionFailure(error) {
 }
 
 function resetActionButtons() {
-    showLoadingButton(document.getElementById('request-btn'), false); 
-    showLoadingButton(document.getElementById('save-user-btn'), false, 'บันทึก'); 
-    document.querySelectorAll('button:disabled').forEach(btn => showLoadingButton(btn, false));
+    const reqBtn = document.getElementById('request-btn');
+    if(reqBtn) { showLoadingButton(reqBtn, false); reqBtn.dataset.isProcessing = 'false'; }
+    
+    const saveUserBtn = document.getElementById('save-user-btn');
+    if(saveUserBtn) { showLoadingButton(saveUserBtn, false, 'บันทึก'); saveUserBtn.dataset.isProcessing = 'false'; }
+    
+    // รีเซ็ตเฉพาะปุ่มที่มีค้างสถานะ Processing เท่านั้น
+    document.querySelectorAll('button[data-is-processing="true"]').forEach(btn => {
+        showLoadingButton(btn, false);
+        btn.dataset.isProcessing = 'false';
+    });
 }
 
 function openModalAnimation(modal) { 
@@ -1644,22 +2115,51 @@ function closeModalAnimation(modal) {
     setTimeout(() => modal.classList.add('hidden'), 300); 
 }
 
-function showPromptModal(title, callback) { 
+function showPromptModal(title, callback, onCancel) { 
     const modal = document.getElementById('prompt-modal'); 
     if(!modal) return; 
     document.getElementById('prompt-modal-title').textContent = title; 
     const input = document.getElementById('prompt-modal-input'); input.value = ''; 
-    document.getElementById('prompt-modal-submit-btn').onclick = () => { if(input.value.trim()) { closeModalAnimation(modal); callback(input.value.trim()); } }; 
-    document.getElementById('prompt-modal-cancel-btn').onclick = () => closeModalAnimation(modal); 
+    
+    const submitBtn = document.getElementById('prompt-modal-submit-btn');
+    submitBtn.disabled = false;
+    
+    submitBtn.onclick = () => { 
+        if(input.value.trim()) { 
+            if (submitBtn.disabled) return;
+            submitBtn.disabled = true; // ล็อคปุ่มใน Modal
+            closeModalAnimation(modal); 
+            callback(input.value.trim()); 
+        } 
+    }; 
+    
+    document.getElementById('prompt-modal-cancel-btn').onclick = () => {
+        closeModalAnimation(modal); 
+        if(onCancel) onCancel();
+    }; 
+    
     openModalAnimation(modal); setTimeout(() => input.focus(), 100); 
 }
 
-function showConfirmModal(message, callback) { 
+function showConfirmModal(message, callback, onCancel) { 
     const modal = document.getElementById('confirm-modal'); 
     if(!modal) return; 
     document.getElementById('confirm-modal-message').textContent = message; 
-    document.getElementById('confirm-modal-ok-btn').onclick = () => { closeModalAnimation(modal); callback(); }; 
-    document.getElementById('confirm-modal-cancel-btn').onclick = () => closeModalAnimation(modal); 
+    
+    const okBtn = document.getElementById('confirm-modal-ok-btn');
+    okBtn.disabled = false;
+    
+    okBtn.onclick = () => { 
+        if(okBtn.disabled) return;
+        okBtn.disabled = true; // ล็อคปุ่มใน Modal
+        closeModalAnimation(modal); 
+        callback(); 
+    }; 
+    
+    document.getElementById('confirm-modal-cancel-btn').onclick = () => {
+        closeModalAnimation(modal); 
+        if(onCancel) onCancel();
+    }; 
     openModalAnimation(modal); 
 }
 
