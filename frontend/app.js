@@ -255,7 +255,11 @@ function startPollingForUpdates() {
 function populateTypeDropdown() {
     const typeSelect = document.getElementById('request-type');
     if(!typeSelect) return;
-    const uniqueTypes = [...new Set(AppState.masterStock.map(item => item.itemType))];
+    
+    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่ (isActive !== false) มาแสดงให้พนักงานเบิก
+    const activeStocks = AppState.masterStock.filter(item => item.isActive !== false);
+    const uniqueTypes = [...new Set(activeStocks.map(item => item.itemType))];
+    
     typeSelect.innerHTML = '<option value="">-- เลือกประเภท --</option>';
     uniqueTypes.forEach(type => { if(type) typeSelect.add(new Option(type, type)); });
 }
@@ -264,7 +268,10 @@ function populateSizeDropdown() {
     const typeSelect = document.getElementById('request-type');
     const sizeSelect = document.getElementById('request-size');
     if (!typeSelect || !sizeSelect) return;
-    const availableItems = AppState.masterStock.filter(item => item.itemType === typeSelect.value);
+    
+    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่ (isActive !== false) มาแสดงให้พนักงานเบิก
+    const availableItems = AppState.masterStock.filter(item => item.itemType === typeSelect.value && item.isActive !== false);
+    
     sizeSelect.innerHTML = '<option value="">-- เลือกขนาด --</option>';
     availableItems.forEach(item => { if(item.size) sizeSelect.add(new Option(`${item.size} (คงเหลือ: ${item.newStock} ชิ้น)`, item.size)); });
     displaySelectedItemImage();
@@ -891,16 +898,57 @@ function displayStockSummary(stockData) {
             const dispensed = item.dispensedStock || 0;
             const totalSystem = item.newStock + item.usedStock + item.damagedStock + dispensed;
             
+            // 💡 เช็คสถานะการใช้งาน (ถ้าไม่มีฟิลด์นี้ในรุ่นเก่าให้ถือว่าเปิดใช้งานอยู่)
+            const isActive = item.isActive !== false;
+            
             const tr = document.createElement('tr');
-            tr.className = `hover:bg-slate-50 transition-colors ${(isLow || isOut) ? 'bg-red-50/20' : ''}`;
+            
+            // 💡 ถ้าปิดใช้งาน ให้พื้นหลังเป็นสีเทาและตัวหนังสือซีดลง
+            if (!isActive) {
+                tr.className = 'bg-slate-100 opacity-60 grayscale-[50%] transition-all hover:opacity-100';
+            } else {
+                tr.className = `hover:bg-slate-50 transition-colors ${(isLow || isOut) ? 'bg-red-50/20' : ''}`;
+            }
             
             let rowAlertBadge = '';
-            if (isOut) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white border border-red-700">หมด</span>';
+            if (!isActive) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-300 text-slate-700 border border-slate-400">ระงับการเบิก</span>';
+            else if (isOut) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white border border-red-700">หมด</span>';
             else if (isLow) rowAlertBadge = '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">ใกล้หมด</span>';
+            
+            // 💡 สร้างปุ่มจัดการตามสถานะ (ถ้าปิดใช้งาน ซ่อนปุ่มรับเข้า/ปรับยอด/แก้ไข)
+            let actionButtonsHTML = '';
+            if (isActive) {
+                actionButtonsHTML = `
+                    <button title="รับเข้าสต๊อก" class="receive-stock-btn p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 border border-emerald-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"></path></svg>
+                    </button>
+                    <button title="ปรับยอด" class="adjust-stock-btn p-2 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-700 border border-amber-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                    </button>
+                    <button title="อัปเดตรูป/แจ้งเตือน" class="edit-stock-btn p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                    <button title="ประวัติ" class="history-stock-btn p-2 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                    <button title="ระงับการเบิกจ่ายพัสดุนี้" class="toggle-status-btn p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 border border-rose-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}" data-status="false">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.293M3 3l18 18M15.205 10.155a3 3 0 01-4.35 4.35m-1.745-6.81a9.97 9.97 0 013.918-1.488c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
+                    </button>
+                `;
+            } else {
+                actionButtonsHTML = `
+                    <button title="ประวัติ" class="history-stock-btn p-2 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                    <button title="เปิดการเบิกจ่ายอีกครั้ง" class="toggle-status-btn p-2 text-slate-600 bg-white hover:bg-emerald-50 hover:text-emerald-700 border border-slate-300 rounded-md transition-colors shadow-sm" data-type="${item.itemType}" data-size="${item.size}" data-status="true">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    </button>
+                `;
+            }
             
             tr.innerHTML = `
                 <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="font-bold text-slate-800 text-[15px]">ไซส์ ${item.size}</span>
+                    <span class="font-bold ${isActive ? 'text-slate-800' : 'text-slate-500'} text-[15px]">ไซส์ ${item.size}</span>
                     ${rowAlertBadge}
                 </td>
                 <td class="px-4 py-4">
@@ -928,18 +976,7 @@ function displayStockSummary(stockData) {
                 </td>
                 <td class="px-6 py-4 text-right whitespace-nowrap">
                     <div class="flex items-center justify-end gap-1.5">
-                        <button title="รับเข้าสต๊อก" class="receive-stock-btn p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 border border-emerald-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
-                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"></path></svg>
-                        </button>
-                        <button title="ปรับยอด" class="adjust-stock-btn p-2 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-700 border border-amber-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
-                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-                        </button>
-                        <button title="อัปเดตรูป/แจ้งเตือน" class="edit-stock-btn p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
-                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        </button>
-                        <button title="ประวัติ" class="history-stock-btn p-2 text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 border border-slate-200 rounded-md transition-colors" data-type="${item.itemType}" data-size="${item.size}">
-                            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        </button>
+                        ${actionButtonsHTML}
                     </div>
                 </td>
             `;
@@ -1773,6 +1810,38 @@ function setupStaticEventListeners() {
                 cond.options[2].text = `🗑️ ชำรุด (คงเหลือ: ${item.damagedStock})`;
             }
             openModalAnimation(document.getElementById('advanced-adjust-modal'));
+        }
+        // 💡 เพิ่ม Event กดปุ่มเปิด/ปิด พัสดุ (Soft Delete)
+        else if (e.target.matches('.toggle-status-btn') || e.target.closest('.toggle-status-btn')) {
+            const btn = e.target.closest('.toggle-status-btn') || e.target;
+            if (btn.dataset.isProcessing === 'true') return;
+            btn.dataset.isProcessing = 'true';
+
+            const type = btn.dataset.type;
+            const size = btn.dataset.size;
+            const newStatus = btn.dataset.status === 'true'; // แปลง string เป็น boolean
+
+            const actionName = newStatus ? 'เปิดใช้งาน' : 'ระงับการเบิกจ่าย';
+            const actionMsg = newStatus 
+                ? `พนักงานจะสามารถมองเห็นและเบิกพัสดุนี้ได้ตามปกติ` 
+                : `พนักงานจะไม่สามารถเบิกพัสดุนี้ได้อีก แต่ประวัติเดิมจะยังคงอยู่`;
+
+            showConfirmModal(`ยืนยันการ${actionName}\n"${type} (ไซส์ ${size})" หรือไม่?\n\n${actionMsg}`, async () => {
+                showLoadingButton(btn, true);
+                try {
+                    await apiCall('/api/stock/toggle-status', 'PUT', { 
+                        itemType: type, 
+                        size: size, 
+                        isActive: newStatus, 
+                        adminUser: AppState.currentUser.username 
+                    });
+                    onAdminActionSuccess(`ดำเนินการ${actionName}สำเร็จ`);
+                } catch(err) { 
+                    onActionFailure(err); 
+                    showLoadingButton(btn, false, ''); 
+                    btn.dataset.isProcessing = 'false'; 
+                }
+            }, () => { btn.dataset.isProcessing = 'false'; });
         }
         else if (e.target.closest('#confirm-advanced-adjust-btn')) {
             const btn = document.getElementById('confirm-advanced-adjust-btn');

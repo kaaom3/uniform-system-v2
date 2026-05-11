@@ -483,11 +483,27 @@ app.post('/api/stock', async (req, res) => {
         await new Stock({ itemType, size, category, newStock, usedStock, damagedStock, lowStockThreshold, imageUrl }).save();
         await logAdminAction(adminUser, 'Stock Management', `สร้างพัสดุใหม่: ${itemType} (${size})`);
         
-        // 💡 เพิ่มการบันทึกประวัติการรับเข้า (ยอดยกมา) ทันทีที่สร้างพัสดุใหม่ครั้งแรก
         if (newStock > 0) await new StockTransaction({ itemType, size, transactionType: 'IN', quantity: newStock, reason: 'ยอดยกมาเริ่มต้น (ของใหม่)', adminUser }).save();
         if (usedStock > 0) await new StockTransaction({ itemType, size, transactionType: 'IN', quantity: usedStock, reason: 'ยอดยกมาเริ่มต้น (มือสอง)', adminUser }).save();
         if (damagedStock > 0) await new StockTransaction({ itemType, size, transactionType: 'IN', quantity: damagedStock, reason: 'ยอดยกมาเริ่มต้น (ชำรุด)', adminUser }).save();
 
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 💡 API ใหม่: สำหรับ เปิด/ปิด สถานะการใช้งานพัสดุ (Soft Delete)
+app.put('/api/stock/toggle-status', async (req, res) => {
+    try {
+        const { itemType, size, isActive, adminUser } = req.body;
+        const stock = await Stock.findOne({ itemType, size });
+        if (!stock) return res.status(404).json({ error: 'ไม่พบรายการพัสดุนี้ในระบบ' });
+
+        stock.isActive = isActive;
+        await stock.save();
+
+        const actionText = isActive ? 'เปิดใช้งาน' : 'ระงับการเบิกจ่าย';
+        await logAdminAction(adminUser, 'Stock Management', `${actionText}พัสดุ: ${itemType} (${size})`);
+        
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
