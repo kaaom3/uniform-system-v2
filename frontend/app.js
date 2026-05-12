@@ -256,8 +256,26 @@ function populateTypeDropdown() {
     const typeSelect = document.getElementById('request-type');
     if(!typeSelect) return;
     
-    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่ (isActive !== false) มาแสดงให้พนักงานเบิก
-    const activeStocks = AppState.masterStock.filter(item => item.isActive !== false);
+    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่ (isActive !== false)
+    let activeStocks = AppState.masterStock.filter(item => item.isActive !== false);
+    
+    // 💡 ดักจับแผนกและกรองสิทธิ์การมองเห็นหมวดหมู่ (Department Category Filtering)
+    if (AppState.currentUser) {
+        const userDept = AppState.currentUser.department || '';
+        const isLifeguardOrOps = (userDept === 'Lifeguard' || userDept === 'Operations');
+        
+        activeStocks = activeStocks.filter(item => {
+            const cat = item.category || '';
+            if (isLifeguardOrOps) {
+                // แผนก Lifeguard และ Operations เห็นแค่หมวด "ไลฟ์การ์ด" และ "อื่นๆ" เท่านั้น
+                return cat === 'ไลฟ์การ์ด' || cat === 'อื่นๆ';
+            } else {
+                // แผนกอื่นๆ มองเห็นทุกหมวดหมู่ ยกเว้นหมวด "ไลฟ์การ์ด"
+                return cat !== 'ไลฟ์การ์ด';
+            }
+        });
+    }
+
     const uniqueTypes = [...new Set(activeStocks.map(item => item.itemType))];
     
     typeSelect.innerHTML = '<option value="">-- เลือกประเภท --</option>';
@@ -269,8 +287,23 @@ function populateSizeDropdown() {
     const sizeSelect = document.getElementById('request-size');
     if (!typeSelect || !sizeSelect) return;
     
-    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่ (isActive !== false) มาแสดงให้พนักงานเบิก
-    const availableItems = AppState.masterStock.filter(item => item.itemType === typeSelect.value && item.isActive !== false);
+    // 💡 กรองเอาเฉพาะพัสดุที่เปิดใช้งานอยู่
+    let availableItems = AppState.masterStock.filter(item => item.itemType === typeSelect.value && item.isActive !== false);
+    
+    // 💡 กรองหมวดหมู่อีกชั้นเพื่อความปลอดภัยและความถูกต้องแม่นยำ
+    if (AppState.currentUser) {
+        const userDept = AppState.currentUser.department || '';
+        const isLifeguardOrOps = (userDept === 'Lifeguard' || userDept === 'Operations');
+        
+        availableItems = availableItems.filter(item => {
+            const cat = item.category || '';
+            if (isLifeguardOrOps) {
+                return cat === 'ไลฟ์การ์ด' || cat === 'อื่นๆ';
+            } else {
+                return cat !== 'ไลฟ์การ์ด';
+            }
+        });
+    }
     
     sizeSelect.innerHTML = '<option value="">-- เลือกขนาด --</option>';
     availableItems.forEach(item => { if(item.size) sizeSelect.add(new Option(`${item.size} (คงเหลือ: ${item.newStock} ชิ้น)`, item.size)); });
