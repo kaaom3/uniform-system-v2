@@ -198,7 +198,7 @@ app.post('/api/users', async (req, res) => {
 });
 
 // ==========================================
-// 🔴 API: พนักงานลาออก (เคลียร์ของรายชิ้น)
+// 🔴 API: พนักงานลาออก (เคลียร์ของรายชิ้นแบบระบุจำนวนได้)
 // ==========================================
 app.post('/api/users/:username/resign', async (req, res) => {
     try {
@@ -212,44 +212,48 @@ app.post('/api/users/:username/resign', async (req, res) => {
         user.status = 'inactive';
         await user.save();
 
-        let returnedCount = 0;
+        let returnedUsedCount = 0;
+        let returnedDamagedCount = 0;
         let writtenOffCount = 0;
 
-        // 2. จัดการพัสดุตามคำสั่งของแอดมินในแต่ละรายการ
+        // 2. จัดการพัสดุตามคำสั่งของแอดมินในแต่ละรายการ (แบ่งตามจำนวน)
         if (resolutions && Array.isArray(resolutions)) {
             for (const resData of resolutions) {
                 const reqItem = await Request.findOne({ requestId: resData.requestId, status: 'Approved' });
                 if (!reqItem) continue;
 
-                if (resData.action === 'RETURN') {
-                    // แอดมินเลือก "คืนของ"
-                    const stock = await Stock.findOne({ itemType: reqItem.itemType, size: reqItem.size });
-                    if (stock) {
-                        if (resData.condition === 'Damaged') {
-                            stock.damagedStock += reqItem.quantity;
-                            await new StockTransaction({ itemType: reqItem.itemType, size: reqItem.size, transactionType: 'RETURN-DAMAGED', quantity: reqItem.quantity, reason: `รับคืนชำรุด (พนักงานลาออก: ${user.name})`, adminUser }).save();
-                        } else {
-                            stock.usedStock += reqItem.quantity;
-                            await new StockTransaction({ itemType: reqItem.itemType, size: reqItem.size, transactionType: 'RETURN-USED', quantity: reqItem.quantity, reason: `รับคืนมือสอง (พนักงานลาออก: ${user.name})`, adminUser }).save();
-                        }
-                        await stock.save();
+                const stock = await Stock.findOne({ itemType: reqItem.itemType, size: reqItem.size });
+                let notesArr = [];
+
+                if (stock) {
+                    if (resData.usedQty > 0) {
+                        stock.usedStock += resData.usedQty;
+                        await new StockTransaction({ itemType: reqItem.itemType, size: reqItem.size, transactionType: 'RETURN-USED', quantity: resData.usedQty, reason: `รับคืนมือสอง (พนักงานลาออก: ${user.name})`, adminUser }).save();
+                        returnedUsedCount += resData.usedQty;
+                        notesArr.push(`มือสอง ${resData.usedQty}`);
                     }
-                    reqItem.status = 'Returned';
-                    reqItem.notes = `ระบบรับคืนอัตโนมัติ (ลาออก - ${resData.condition === 'Damaged' ? 'ชำรุด' : 'มือสอง'}) โดย ${adminUser}`;
-                    returnedCount++;
-                } else if (resData.action === 'WRITE_OFF') {
-                    // แอดมินเลือก "ไม่คืนของ"
-                    reqItem.status = 'Returned'; // เปลี่ยนสถานะเพื่อเคลียร์ออกจากรายการที่ถือครอง
-                    reqItem.notes = `ตัดจำหน่าย/สูญหาย (พนักงานลาออก ไม่ได้คืนของ) โดย ${adminUser}`;
-                    writtenOffCount++;
+                    if (resData.damagedQty > 0) {
+                        stock.damagedStock += resData.damagedQty;
+                        await new StockTransaction({ itemType: reqItem.itemType, size: reqItem.size, transactionType: 'RETURN-DAMAGED', quantity: resData.damagedQty, reason: `รับคืนชำรุด (พนักงานลาออก: ${user.name})`, adminUser }).save();
+                        returnedDamagedCount += resData.damagedQty;
+                        notesArr.push(`ชำรุด ${resData.damagedQty}`);
+                    }
+                    await stock.save();
                 }
-                
+
+                if (resData.lostQty > 0) {
+                    writtenOffCount += resData.lostQty;
+                    notesArr.push(`สูญหาย/ไม่คืน ${resData.lostQty}`);
+                }
+
+                reqItem.status = 'Returned';
+                reqItem.notes = `คืนของแล้ว (ลาออก) -> ${notesArr.join(', ')} โดย ${adminUser}`;
                 await reqItem.save();
             }
         }
 
         // 3. บันทึก Log การทำงานของแอดมิน
-        await logAdminAction(adminUser, 'User Management', `ทำรายการพนักงานลาออก: ${username} (รับคืนสต๊อก ${returnedCount} รายการ, ตัดจำหน่าย ${writtenOffCount} รายการ)`);
+        await logAdminAction(adminUser, 'User Management', `ทำรายการพนักงานลาออก: ${username} (คืนมือสอง ${returnedUsedCount}, คืนชำรุด ${returnedDamagedCount}, สูญหาย ${writtenOffCount})`);
 
         res.json({ success: true, message: 'ดำเนินการสำเร็จ' });
     } catch (err) {

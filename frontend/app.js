@@ -2,7 +2,7 @@
 // 🌍 1. GLOBAL STATE & CONFIGURATIONS
 // ==========================================
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-const API_BASE_URL = isLocalhost ? 'http://localhost:3000' : 'https://uniform-system-v2.onrender.com';
+const API_BASE_URL = isLocalhost ? 'http://localhost:3000' : 'https://uniform-system-hg0e.onrender.com';
 
 const AppState = {
     currentUser: null,
@@ -1073,7 +1073,7 @@ function injectResignModal() {
             <div class="p-6 overflow-y-auto bg-slate-50 flex-grow">
                 <div class="mb-4">
                     <h4 class="text-xl font-bold text-slate-800">รหัสพนักงาน: <span id="resign-username-display" class="text-orange-600"></span></h4>
-                    <p class="text-sm text-slate-500 mt-1">กรุณาตรวจสอบและจัดการพัสดุที่พนักงานถือครองอยู่ ก่อนทำการยืนยันปิดบัญชี</p>
+                    <p class="text-sm text-slate-500 mt-1">ระบุจำนวนคืนแต่ละสภาพให้ตรงกับยอดที่เบิกไป ก่อนทำการปิดบัญชี</p>
                 </div>
                 
                 <input type="hidden" id="resign-target-username">
@@ -1084,9 +1084,8 @@ function injectResignModal() {
                             <thead class="bg-slate-100 sticky top-0 z-10 shadow-sm">
                                 <tr>
                                     <th class="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">รายการพัสดุ (ไซส์)</th>
-                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">จำนวนที่เบิกไป</th>
-                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase w-48">การคืนของ</th>
-                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase w-40">สภาพของที่คืน</th>
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase w-24">เบิกไป</th>
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">ระบุยอดคืนแต่ละสภาพ</th>
                                 </tr>
                             </thead>
                             <tbody id="resign-items-tbody" class="bg-white divide-y divide-slate-100">
@@ -1123,20 +1122,36 @@ function injectResignModal() {
     document.getElementById('confirm-resign-btn').addEventListener('click', async (e) => {
         const btn = e.target;
         if (btn.disabled || btn.dataset.isProcessing === 'true') return;
-        btn.dataset.isProcessing = 'true';
-        btn.disabled = true;
 
         const username = document.getElementById('resign-target-username').value;
         const resolutions = [];
+        let isValid = true;
         
+        // กวาดข้อมูลจากทุกแถวและเช็คว่ายอดตรงกับที่เบิกไปไหม
         document.querySelectorAll('.resign-item-row').forEach(row => {
             const reqId = row.dataset.id;
-            const action = row.querySelector('.action-radio:checked').value; 
-            const condition = row.querySelector('.condition-select').value; 
-            resolutions.push({ requestId: reqId, action, condition });
+            const totalQty = parseInt(row.dataset.qty);
+            const usedQty = parseInt(row.querySelector('.res-qty-used').value) || 0;
+            const damagedQty = parseInt(row.querySelector('.res-qty-damaged').value) || 0;
+            const lostQty = parseInt(row.querySelector('.res-qty-lost').value) || 0;
+            
+            if (usedQty + damagedQty + lostQty !== totalQty) {
+                isValid = false;
+                row.classList.add('bg-red-50');
+            } else {
+                row.classList.remove('bg-red-50');
+                resolutions.push({ requestId: reqId, usedQty, damagedQty, lostQty, totalQty });
+            }
         });
 
+        if (!isValid) {
+            return showNotification('กรุณาระบุยอดรวมคืนแต่ละแถวให้ตรงกับจำนวนที่เบิกไป (ไฮไลต์สีแดง)', 'error');
+        }
+
+        btn.dataset.isProcessing = 'true';
+        btn.disabled = true;
         showLoadingButton(btn, true);
+
         try {
             await apiCall(`/api/users/${username}/resign`, 'POST', { 
                 adminUser: AppState.currentUser.username, 
@@ -1148,6 +1163,7 @@ function injectResignModal() {
             onActionFailure(err); 
             showLoadingButton(btn, false, 'ยืนยันการลาออก'); 
             btn.dataset.isProcessing = 'false';
+            btn.disabled = false;
         }
     });
 }
@@ -1173,46 +1189,57 @@ function openResignModal(username, holdings) {
             const tr = document.createElement('tr');
             tr.className = 'resign-item-row hover:bg-slate-50 transition-colors';
             tr.dataset.id = req.requestId;
+            tr.dataset.qty = req.quantity; // 💡 ดึงยอดรวมที่เบิกไปมาฝังใน Dataset
             
             tr.innerHTML = `
                 <td class="px-4 py-3 whitespace-nowrap">
                     <p class="font-bold text-slate-800 text-sm">${req.itemType}</p>
                     <p class="text-[11px] text-slate-500 font-medium">ไซส์: <span class="font-bold text-slate-700">${req.size}</span> | รหัส: ${req.requestId}</p>
                 </td>
-                <td class="px-4 py-3 text-center">
+                <td class="px-4 py-3 text-center border-l border-slate-100">
                     <span class="text-base font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${req.quantity}</span>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    <div class="flex flex-col space-y-1.5 items-start bg-slate-50 p-2 rounded-lg border border-slate-200">
-                        <label class="inline-flex items-center text-xs font-bold text-emerald-700 cursor-pointer">
-                            <input type="radio" name="action-${req.requestId}" value="RETURN" checked class="action-radio form-radio h-4 w-4 text-emerald-600">
-                            <span class="ml-2">ได้คืนของ</span>
-                        </label>
-                        <label class="inline-flex items-center text-xs font-bold text-rose-700 cursor-pointer">
-                            <input type="radio" name="action-${req.requestId}" value="WRITE_OFF" class="action-radio form-radio h-4 w-4 text-rose-600">
-                            <span class="ml-2">ไม่ได้คืน (ตัดจำหน่าย)</span>
-                        </label>
+                <td class="px-4 py-3 border-l border-slate-100">
+                    <div class="flex items-center gap-2 justify-center">
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] font-bold text-blue-600 mb-1">มือสอง</span>
+                            <input type="number" min="0" max="${req.quantity}" value="${req.quantity}" class="res-qty-used w-16 py-1 px-1 text-center font-bold text-sm border border-blue-200 rounded focus:ring-1 focus:ring-blue-500 bg-blue-50 outline-none">
+                        </div>
+                        <span class="text-slate-300 font-bold mt-4">+</span>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] font-bold text-rose-600 mb-1">ชำรุด</span>
+                            <input type="number" min="0" max="${req.quantity}" value="0" class="res-qty-damaged w-16 py-1 px-1 text-center font-bold text-sm border border-rose-200 rounded focus:ring-1 focus:ring-rose-500 bg-rose-50 outline-none">
+                        </div>
+                        <span class="text-slate-300 font-bold mt-4">+</span>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] font-bold text-slate-500 mb-1">สูญหาย</span>
+                            <input type="number" min="0" max="${req.quantity}" value="0" class="res-qty-lost w-16 py-1 px-1 text-center font-bold text-sm border border-slate-200 rounded focus:ring-1 focus:ring-slate-500 bg-slate-50 outline-none">
+                        </div>
+                        <span class="text-slate-400 font-bold mt-4">=</span>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] font-bold text-indigo-600 mb-1">รวม</span>
+                            <span class="res-qty-total text-base font-black text-indigo-600 mt-1">${req.quantity}</span>
+                        </div>
                     </div>
-                </td>
-                <td class="px-4 py-3 text-center">
-                    <select class="condition-select w-full py-1.5 px-2 bg-white border border-slate-300 rounded-md text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700">
-                        <option value="Used">♻️ สภาพใช้ต่อได้ (มือสอง)</option>
-                        <option value="Damaged">🗑️ สภาพชำรุด (ทิ้ง)</option>
-                    </select>
                 </td>
             `;
             tbody.appendChild(tr);
-            
-            const radios = tr.querySelectorAll('.action-radio');
-            const conditionSelect = tr.querySelector('.condition-select');
-            radios.forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    if (e.target.value === 'WRITE_OFF') {
-                        conditionSelect.disabled = true;
-                        conditionSelect.classList.add('opacity-50', 'bg-slate-100', 'cursor-not-allowed');
+
+            // 💡 Event เช็คยอดรวมให้เท่ากับจำนวนตั้งต้นแบบ Realtime
+            const inputs = tr.querySelectorAll('input[type="number"]');
+            const totalSpan = tr.querySelector('.res-qty-total');
+            inputs.forEach(input => {
+                input.addEventListener('input', () => {
+                    const u = parseInt(tr.querySelector('.res-qty-used').value) || 0;
+                    const d = parseInt(tr.querySelector('.res-qty-damaged').value) || 0;
+                    const l = parseInt(tr.querySelector('.res-qty-lost').value) || 0;
+                    const total = u + d + l;
+                    totalSpan.textContent = total;
+                    if (total === req.quantity) {
+                        totalSpan.classList.replace('text-red-500', 'text-indigo-600');
+                        tr.classList.remove('bg-red-50');
                     } else {
-                        conditionSelect.disabled = false;
-                        conditionSelect.classList.remove('opacity-50', 'bg-slate-100', 'cursor-not-allowed');
+                        totalSpan.classList.replace('text-indigo-600', 'text-red-500');
                     }
                 });
             });
