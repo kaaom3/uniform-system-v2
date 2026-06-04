@@ -27,7 +27,20 @@ const waterparkRoutes = require('./routes/waterpark');
 const { sendPushMessage } = require('./lineNotify'); 
 
 const app = express();
-app.use(cors());
+
+// 💡 ตั้งค่า CORS แบบเจาะจงโดเมน (อนุญาตให้ Frontend บน Render และ Localhost เรียกใช้งาน API ได้)
+app.use(cors({
+    origin: [
+        'https://uniform-frontend-0io3.onrender.com', // โดเมนของ Frontend บน Render
+        'http://localhost:3000', 
+        'http://127.0.0.1:3000', 
+        'http://localhost:5500', 
+        'http://127.0.0.1:5500'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // เปิดใช้งาน API ของระบบสวนน้ำ
