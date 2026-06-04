@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สวัสดิการเข้าสวนน้ำ (Waterpark Access)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; }
+        .tier-badge { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: white; } 
+    </style>
+</head>
+<body class="text-slate-800 pb-20">
+    <div id="app" class="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <div id="notification" class="hidden fixed top-5 right-5 text-white py-3 px-6 rounded-xl shadow-lg z-[9999] transition-all font-medium border border-white/20 backdrop-blur-sm">
+            <p id="notification-message"></p>
+        </div>
+
+        <header class="flex justify-between items-center mb-6 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">
+            <div class="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-cyan-100 to-transparent opacity-50 pointer-events-none"></div>
+            <div class="flex items-center space-x-4 relative z-10">
+                <a href="index.html" class="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-500 transition-colors" title="กลับสู่หน้าหลัก">
+                    <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                </a>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
+                        <span class="text-cyan-500">🌊</span> สวัสดิการเข้าสวนน้ำ
+                    </h1>
+                    <p class="text-[10px] sm:text-sm font-medium text-slate-500 mt-0.5">พนักงาน: <span id="wp-user-name" class="text-cyan-700 font-bold"></span></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 relative z-10">
+                <div class="hidden sm:flex tier-badge px-3 py-1.5 rounded-lg font-black text-[11px] shadow-sm items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
+                    <span id="wp-tier-display">กำลังโหลด...</span>
+                </div>
+                <button onclick="openWpHistoryModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-[11px] font-bold border border-indigo-200 transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    ประวัติ
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <div class="lg:col-span-5 space-y-6">
+                <div id="wp-latest-status-container" class="hidden"></div>
+                <div class="bg-gradient-to-r from-cyan-600 to-blue-600 p-5 rounded-2xl shadow-sm text-white flex justify-between items-center border border-cyan-500">
+                    <div>
+                        <h3 class="font-bold text-cyan-50 text-xs mb-0.5 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-300" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path></svg>
+                            โควต้าญาติเข้าฟรี
+                        </h3>
+                        <p id="wp-quota-note" class="text-[9px] text-cyan-200 leading-tight max-w-[160px] opacity-90"></p>
+                    </div>
+                    <div class="flex items-baseline gap-1 text-right shrink-0">
+                        <span id="wp-free-remain" class="text-4xl font-black tracking-tighter">0</span>
+                        <span id="wp-free-total" class="text-sm font-bold text-cyan-200">/ 0</span>
+                    </div>
+                </div>
+
+                <div id="wp-relative-panel" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hidden">
+                    <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-[13px] font-bold text-slate-800 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                            ลงทะเบียนญาติ <span id="wp-rel-count" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">0/8</span>
+                        </h3>
+                    </div>
+                    
+                    <div id="wp-locked-msg" class="hidden mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-center shadow-inner">
+                        <p class="text-xs font-bold text-amber-700">🔒 คุณลงทะเบียนครบ 8 คนแล้ว หากต้องการเปลี่ยนแปลงข้อมูลกรุณาติดต่อ HR</p>
+                    </div>
+
+                    <form id="wp-add-rel-form" class="space-y-3 mb-4 p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                        <div>
+                            <input type="text" id="wp-rel-name" placeholder="ชื่อ-สกุลจริง" class="w-full py-2 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cyan-500 text-xs outline-none">
+                        </div>
+                        <div>
+                            <input type="text" id="wp-rel-idcard-no" maxlength="13" placeholder="เลขบัตรประชาชน 13 หลัก" class="w-full py-2 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cyan-500 text-xs outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">วันหมดอายุบัตร</label>
+                            <input type="date" id="wp-rel-idcard-expiry" class="w-full py-1.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cyan-500 text-xs text-slate-700 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">แนบรูปถ่ายหน้าบัตร <span class="text-rose-500 normal-case ml-1">(ขนาดไม่เกิน 2MB)</span></label>
+                            <input type="file" id="wp-rel-idcard" accept="image/*" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer bg-white border border-slate-200 rounded-lg">
+                        </div>
+                        <button type="submit" id="wp-btn-add-rel" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-all text-xs">บันทึกรายชื่อ</button>
+                    </form>
+
+                    <div id="wp-relatives-list" class="space-y-2 max-h-40 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-7 space-y-6">
+                <div class="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-200 h-full">
+                    <h3 class="text-[15px] font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        สร้างรายการจอง
+                    </h3>
+                    
+                    <div class="space-y-5">
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">วันที่เข้าใช้บริการ</label>
+                            <input type="date" id="wp-visit-date" class="w-full py-2.5 px-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-bold text-slate-700 shadow-sm outline-none transition-shadow">
+                        </div>
+
+                        <!-- 💡 กล่องรับเหตุผลจองด่วน -->
+                        <div id="urgent-reason-container" class="hidden p-4 bg-rose-50 border border-rose-200 rounded-xl shadow-sm animate-[pulse_3s_ease-in-out_infinite]">
+                            <label class="block text-[11px] font-bold text-red-700 mb-1.5 flex items-center gap-1.5">
+                                <span class="text-base leading-none">🚨</span> กรณีจองล่วงหน้าน้อยกว่า 3 วัน กรุณาระบุเหตุผล
+                            </label>
+                            <input type="text" id="wp-urgent-reason" placeholder="เช่น ญาติเพิ่งเดินทางมาถึงกะทันหัน..." class="w-full py-2 px-3 bg-white border border-red-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500 font-medium text-slate-700">
+                        </div>
+
+                        <div class="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between shadow-sm">
+                            <div>
+                                <h4 class="font-bold text-blue-800 text-sm">คุณ (พนักงาน) เข้าด้วยหรือไม่?</h4>
+                                <p class="text-[10px] text-blue-600 mt-0.5">พนักงานเข้าฟรีเสมอ ไม่หักโควต้าญาติ</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="wp-emp-enter" checked class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+
+                        <div class="border-t border-slate-100 pt-4">
+                            <h4 class="text-sm font-bold text-slate-800 mb-3">เพิ่มผู้ติดตาม (ญาติ / บุคคลอื่น)</h4>
+                            
+                            <div id="wp-guest-dropdown-section" class="mb-4 hidden">
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1.5">เลือกจากรายชื่อที่ลงทะเบียนไว้ <span class="text-emerald-600">(ใช้โควต้าฟรี)</span></label>
+                            </div>
+
+                            <div id="wp-toggle-freeform-container" class="pt-2 border-t border-slate-100 border-dashed">
+                                <button type="button" id="wp-toggle-freeform-btn" class="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-xs flex justify-center items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                    <span id="wp-toggle-freeform-text">เพิ่มบุคคลภายนอก</span>
+                                </button>
+                            </div>
+
+                            <div id="wp-guest-freeform-section" class="pt-3 hidden">
+                                <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl shadow-sm relative" id="wp-freeform-box">
+                                    <button type="button" id="wp-close-freeform-btn" class="absolute top-2 right-2 text-amber-600 hover:bg-amber-100 hover:text-rose-500 p-1 rounded-md transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                    </button>
+
+                                    <label id="wp-freeform-label" class="block text-[11px] font-bold text-amber-800 mb-3 pr-6"></label>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <input type="text" id="wp-guest-name" placeholder="ชื่อ-สกุลผู้ติดตาม" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg text-sm outline-none transition-shadow focus:ring-2 focus:ring-cyan-500">
+                                        </div>
+                                        <div>
+                                            <input type="text" id="wp-guest-idcard-no" maxlength="13" placeholder="เลขบัตรประจำตัวประชาชน 13 หลัก" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg text-sm outline-none transition-shadow focus:ring-2 focus:ring-cyan-500 font-mono">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">วันหมดอายุบัตร <span class="text-rose-500">*</span></label>
+                                            <input type="date" id="wp-guest-idcard-expiry" class="w-full py-2.5 px-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm text-slate-700 outline-none transition-shadow">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 mb-1">แนบรูปถ่ายหน้าบัตร <span class="text-rose-500 font-medium ml-1">(ขนาดไม่เกิน 2MB)</span></label>
+                                            <input type="file" id="wp-guest-idcard" accept="image/*" class="block w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:font-bold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300 cursor-pointer bg-white border border-slate-200 rounded-lg">
+                                        </div>
+                                        
+                                        <div class="flex gap-2 pt-2">
+                                            <button type="button" id="wp-btn-add-guest" class="w-full font-bold py-2.5 px-4 rounded-lg shadow-sm transition-all text-xs flex justify-center items-center gap-1">
+                                                <span id="wp-btn-add-guest-text">เพิ่มเข้ารายการ</span>
+                                            </button>
+                                            <button type="button" id="wp-btn-add-guest-discount" class="w-full bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 font-bold py-2.5 px-4 rounded-lg shadow-sm transition-all text-xs justify-center items-center gap-1 hidden">
+                                                เพิ่ม (ลด 50%)
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="mt-4">
+                            <div class="flex justify-between items-end mb-2">
+                                <label class="block text-xs font-bold text-slate-500 uppercase">สรุปรายชื่อในรอบนี้ (<span id="wp-cart-count" class="text-cyan-600">0</span> คน)</label>
+                            </div>
+                            <div id="wp-cart-list" class="space-y-2 min-h-[4rem] max-h-48 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-xl shadow-inner">
+                                <p class="text-center text-xs text-slate-400 py-3">ยังไม่ได้เพิ่มผู้ติดตาม</p>
+                            </div>
+                        </div>
+
+                        <button id="wp-btn-submit" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md shadow-cyan-200 transition-all mt-4 text-sm flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            ยืนยันการจองสิทธิ์
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="wp-history-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 transition-opacity">
+            <div class="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl mx-4 max-h-[85vh] flex flex-col scale-95 transition-transform" id="wp-history-modal-container">
+                <div class="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center rounded-t-3xl">
+                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        ประวัติการจองสวนน้ำทั้งหมด
+                    </h3>
+                    <button onclick="closeWpHistoryModal()" class="p-2 bg-slate-200 hover:bg-rose-500 hover:text-white rounded-full transition-colors text-slate-500">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-5 overflow-y-auto flex-1 bg-slate-100 space-y-4" id="wp-history-list-modal">
+                    <p class="text-center text-sm text-slate-500 py-4">กำลังโหลดข้อมูล...</p>
+                </div>
+            </div>
+        </div>
+        
+        <script src="waterpark.js"></script>
+    </body>
+    </html>

@@ -10,7 +10,9 @@ const path = require('path');
 const https = require('https'); 
 const iconv = require('iconv-lite'); 
 
-// Models
+// ==========================================
+// 📂 MODELS (นำเข้าฐานข้อมูล)
+// ==========================================
 const User = require('./models/User');
 const Stock = require('./models/Stock');
 const Request = require('./models/Request');
@@ -18,15 +20,21 @@ const Log = require('./models/Log');
 const StockTransaction = require('./models/StockTransaction');
 const PasswordReset = require('./models/PasswordReset');
 
-// Utils
+// ==========================================
+// 📂 ROUTERS & UTILS
+// ==========================================
+const waterparkRoutes = require('./routes/waterpark');
 const { sendPushMessage } = require('./lineNotify'); 
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// เปิดใช้งาน API ของระบบสวนน้ำ
+app.use('/api/waterpark', waterparkRoutes);
+
 // ==========================================
-// 📂 FILE UPLOAD CONFIG (Cloudinary)
+// ☁️ CLOUDINARY CONFIG
 // ==========================================
 if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY) {
     console.error("⚠️ คำเตือน: ยังไม่ได้ตั้งค่าคีย์ Cloudinary ในไฟล์ .env หรือ บนเว็บ Render");
@@ -49,7 +57,7 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage: storage });
 
 // ==========================================
-// 🔗 เชื่อมต่อ MongoDB
+// 🔗 เชื่อมต่อ MONGODB
 // ==========================================
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
@@ -129,7 +137,15 @@ app.post('/api/auth/login', async (req, res) => {
         const user = await User.findOne({ username });
         if (!user || user.password !== password) return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
         if (user.status !== 'active') return res.status(403).json({ error: 'บัญชีนี้ถูกระงับการใช้งาน' });
-        res.json({ username: user.username, name: user.name, department: user.department, role: user.role, mustChangePassword: user.mustChangePassword });
+        
+        res.json({ 
+            username: user.username, 
+            name: user.name, 
+            department: user.department, 
+            role: user.role, 
+            isHeadApprover: user.isHeadApprover, // ส่งสถานะหัวหน้าเพื่อใช้ใน Frontend
+            mustChangePassword: user.mustChangePassword 
+        });
     } catch (err) { res.status(500).json({ error: 'Server Error' }); }
 });
 
@@ -198,7 +214,7 @@ app.post('/api/users', async (req, res) => {
 });
 
 // ==========================================
-// 🔴 API: พนักงานลาออก (เคลียร์ของรายชิ้นแบบระบุจำนวนได้)
+// 🔴 API: พนักงานลาออก (จัดการพัสดุรายชิ้น)
 // ==========================================
 app.post('/api/users/:username/resign', async (req, res) => {
     try {
@@ -216,7 +232,7 @@ app.post('/api/users/:username/resign', async (req, res) => {
         let returnedDamagedCount = 0;
         let writtenOffCount = 0;
 
-        // 2. จัดการพัสดุตามคำสั่งของแอดมินในแต่ละรายการ (แบ่งตามจำนวน)
+        // 2. จัดการพัสดุตามคำสั่งของแอดมินในแต่ละรายการ (แบ่งตามจำนวนที่ระบุ)
         if (resolutions && Array.isArray(resolutions)) {
             for (const resData of resolutions) {
                 const reqItem = await Request.findOne({ requestId: resData.requestId, status: 'Approved' });
@@ -441,7 +457,7 @@ app.get('/api/export/stock-history', async (req, res) => {
 });
 
 // ==========================================
-// 📦 STOCK MANAGEMENT (ระบบจัดการสต๊อกแบบใหม่)
+// 📦 STOCK MANAGEMENT
 // ==========================================
 
 app.get('/api/stock', async (req, res) => {
@@ -495,7 +511,7 @@ app.post('/api/stock', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 💡 API ใหม่: สำหรับ เปิด/ปิด สถานะการใช้งานพัสดุ (Soft Delete)
+// เปิด/ปิด สถานะการใช้งานพัสดุ (Soft Delete)
 app.put('/api/stock/toggle-status', async (req, res) => {
     try {
         const { itemType, size, isActive, adminUser } = req.body;
@@ -568,7 +584,7 @@ app.get('/api/stock/history', async (req, res) => {
 });
 
 // ==========================================
-// 🛒 REQUESTS (การเบิก-คืน)
+// 🛒 REQUESTS (การเบิก-คืน ยูนิฟอร์ม)
 // ==========================================
 app.get('/api/requests/me', async (req, res) => {
     try { 
@@ -623,7 +639,7 @@ app.get('/api/requests/holdings', async (req, res) => {
 });
 
 // ==========================================
-// 🛡️ ADMIN ACTIONS (อนุมัติ / ปฏิเสธ / รับคืน)
+// 🛡️ ADMIN ACTIONS (อนุมัติ / ปฏิเสธ / รับคืน ยูนิฟอร์ม)
 // ==========================================
 app.get('/api/admin/pending-approvals', async (req, res) => {
     try { res.json(await Request.find({ status: { $in: ['Pending', 'Pending Return'] } }).sort({ createdAt: 1 })); } catch (err) { res.status(500).json({ error: err.message }); }
