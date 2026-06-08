@@ -28,21 +28,10 @@ const { sendPushMessage } = require('./lineNotify');
 
 const app = express();
 
-// 💡 ตั้งค่า CORS แบบเจาะจงโดเมน (อนุญาตให้ Frontend บน Render และ Localhost เรียกใช้งาน API ได้)
-app.use(cors({
-    origin: [
-        'https://uniform-frontend-0io3.onrender.com', // โดเมนของ Frontend บน Render
-        'http://localhost:3000', 
-        'http://127.0.0.1:3000', 
-        'http://localhost:5500', 
-        'http://127.0.0.1:5500'
-    ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// 💡 ปลดล็อค CORS ให้รับได้ทุกโดเมน (แก้ปัญหา Blocked by CORS 100%)
+app.use(cors());
 
 app.use(express.json());
-app.use(express.static('public'));
 
 // เปิดใช้งาน API ของระบบสวนน้ำ
 app.use('/api/waterpark', waterparkRoutes);
