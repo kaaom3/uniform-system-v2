@@ -6,6 +6,9 @@ const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
     department: { type: String },
     
+    // 💡 เพิ่มฟิลด์สำหรับเก็บ Email
+    email: { type: String, default: '' },
+    
     // ระดับสิทธิ์สวนน้ำ
     positionLevel: { 
         type: String, 

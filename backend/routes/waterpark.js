@@ -11,6 +11,7 @@ const PDFDocument = require('pdfkit');
 const https = require('https');
 const path = require('path'); 
 const fs = require('fs');     
+const jwt = require('jsonwebtoken'); 
 
 const tierMaxFree = {
     'Tier1_Staff': 4,
@@ -44,7 +45,50 @@ const fetchImageBuffer = (url) => {
     });
 };
 
-// 1. ดึงข้อมูล Dashboard สวนน้ำของพนักงาน
+router.get('/email-action', async (req, res) => {
+    const { token } = req.query;
+    
+    const renderHtml = (title, message, colorCode) => `
+        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+        <style>body{font-family:'Sarabun',sans-serif;background:#f3f4f6;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}
+        .card{background:#fff;padding:40px;border-radius:16px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);text-align:center;max-width:400px;border-top: 8px solid ${colorCode};}
+        h2{color:${colorCode};margin-top:0;} p{color:#4b5563;font-size:16px;}</style></head>
+        <body><div class="card"><h2>${title}</h2><p>${message}</p></div></body></html>
+    `;
+
+    if (!token) return res.send(renderHtml('❌ เกิดข้อผิดพลาด', 'ไม่พบ Token ยืนยันตัวตน', '#ef4444'));
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const { bookingId, action, headUser } = decoded;
+
+        const booking = await WaterparkBooking.findById(bookingId);
+        if (!booking) return res.send(renderHtml('❌ เกิดข้อผิดพลาด', 'ไม่พบรายการจองนี้ในระบบ (อาจถูกลบไปแล้ว)', '#ef4444'));
+
+        if (booking.status !== 'Pending_Head') {
+            return res.send(renderHtml('⚠️ ทำรายการไปแล้ว', 'รายการนี้ได้รับการตรวจสอบไปเรียบร้อยแล้ว ไม่สามารถทำซ้ำได้', '#f59e0b'));
+        }
+
+        if (action === 'APPROVE') {
+            booking.status = 'Pending_HR';
+            booking.approvalHistory.push({ action: 'HEAD_APPROVED', actor: headUser, note: 'หัวหน้าอนุมัติผ่าน Email (One-Click)' });
+            await booking.save();
+            return res.send(renderHtml('✅ อนุมัติสำเร็จ!', `คุณได้อนุมัติคำขอของ <b>${booking.username}</b> เรียบร้อยแล้ว<br>ระบบได้ส่งเรื่องต่อให้ HR ดำเนินการ`, '#10b981'));
+        } 
+        else if (action === 'REJECT') {
+            booking.status = 'Rejected';
+            booking.rejectReason = `ไม่อนุมัติ (กดปฏิเสธผ่าน Email โดย ${headUser})`;
+            booking.approvalHistory.push({ action: 'REJECTED', actor: headUser, note: 'หัวหน้าปฏิเสธผ่าน Email (One-Click)' });
+            await booking.save();
+            return res.send(renderHtml('❌ ปฏิเสธคำขอสำเร็จ', `คุณได้ปฏิเสธคำขอของ <b>${booking.username}</b> เรียบร้อยแล้ว`, '#ef4444'));
+        }
+
+    } catch (err) {
+        return res.send(renderHtml('❌ ลิงก์หมดอายุหรือไม่ถูกต้อง', 'ลิงก์นี้หมดอายุหรือข้อมูลไม่ถูกต้อง กรุณาเข้าระบบเพื่อทำรายการแทน', '#ef4444'));
+    }
+});
+
 router.get('/dashboard/:username', async (req, res) => {
     try {
         const user = await User.findOne({ username: req.params.username });
@@ -55,6 +99,15 @@ router.get('/dashboard/:username', async (req, res) => {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+        const todayForLock = new Date();
+        todayForLock.setHours(0,0,0,0);
+        const activeFutureBookings = await WaterparkBooking.find({
+            username: user.username,
+            visitDate: { $gte: todayForLock },
+            status: { $in: ['Pending_Head', 'Pending_HR', 'Approved'] }
+        });
+        const isFreeQuotaLocked = activeFutureBookings.length > 0;
 
         const bookingsThisMonth = await WaterparkBooking.find({ 
             username: user.username, 
@@ -75,6 +128,7 @@ router.get('/dashboard/:username', async (req, res) => {
         res.json({
             tier, maxFree, freeUsed,
             freeRemaining: Math.max(0, maxFree - freeUsed),
+            isFreeQuotaLocked,
             relatives,
             regUnlocked: user.waterparkRegUnlocked,
             allBookings
@@ -82,7 +136,6 @@ router.get('/dashboard/:username', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. ลงทะเบียนญาติใหม่
 router.post('/relatives', async (req, res) => {
     try {
         const { username, fullName, idCardNumber, idCardExpiry, idCardImageUrl } = req.body;
@@ -98,7 +151,6 @@ router.post('/relatives', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 3. ระงับและลบรูปญาติ
 router.delete('/relatives/:id', async (req, res) => {
     try {
         const relative = await WaterparkRelative.findById(req.params.id);
@@ -117,7 +169,6 @@ router.delete('/relatives/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 4. จองสิทธิ์เข้าสวนน้ำ (สร้างใหม่)
 router.post('/book', async (req, res) => {
     try {
         const { username, visitDate, isEmployeeEntering, guests, urgentReason } = req.body;
@@ -201,15 +252,101 @@ router.post('/book', async (req, res) => {
             totalFreeGuestsUsed, totalDiscountGuestsUsed,
             isUrgent, urgentReason, 
             status: initialStatus,
-            headApprover: headUsername
+            headApprover: headUsername,
+            approvalHistory: [{
+                action: 'CREATED',
+                actor: username,
+                note: 'พนักงานส่งคำขอจองสิทธิ์เข้าสวนน้ำ'
+            }]
         });
 
         await booking.save();
+
+        if (initialStatus === 'Pending_Head' && process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+            });
+
+            const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            
+            // 💡 สร้างตาราง HTML ของผู้ติดตาม
+            let guestsTableHtml = '';
+            if (processedGuests.length > 0) {
+                guestsTableHtml = `
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9; text-align: left;">
+                                <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
+                                <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${processedGuests.map(g => `
+                                <tr>
+                                    <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
+                                    <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
+            }
+            
+            for (let hu of headUsers) {
+                const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                
+                const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+                const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+                const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
+                const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
+
+                const mailOptions = {
+                    from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                    to: targetEmail,
+                    subject: `[รออนุมัติ] คำขอเข้าสวนน้ำจาก ${user.name} (${bookingId})`,
+                    html: `
+                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                            <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
+                                <h2 style="margin: 0;">คำขออนุมัติเข้าสวนน้ำ</h2>
+                            </div>
+                            <div style="padding: 20px;">
+                                <p>เรียน คุณ${hu.name},</p>
+                                <p>มีการส่งคำขอจองสิทธิ์เข้าใช้บริการสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
+                                <ul style="line-height: 1.8;">
+                                    <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
+                                    <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
+                                    ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
+                                    <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
+                                </ul>
+                                
+                                <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตาม</h3>
+                                ${guestsTableHtml}
+
+                                <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
+                                <div style="text-align: center; margin-top: 20px;">
+                                    <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
+                                    <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
+                                </div>
+                            </div>
+                            <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
+                                นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
+                            </div>
+                        </div>
+                    `
+                };
+                
+                transporter.sendMail(mailOptions).catch(console.error);
+            }
+        }
+
         res.json({ success: true, booking });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 5. แก้ไขคำขอเข้าสวนน้ำ (อัปเดตคำขอเดิมที่โดนตีกลับ)
 router.put('/book/:id', async (req, res) => {
     try {
         const { username, visitDate, isEmployeeEntering, guests, urgentReason } = req.body;
@@ -298,13 +435,57 @@ router.put('/book/:id', async (req, res) => {
         booking.status = initialStatus;
         booking.headApprover = headUsername;
         booking.rejectReason = ''; 
+        
+        booking.approvalHistory.push({ action: 'CREATED', actor: username, note: 'พนักงานแก้ไขคำขอและส่งใหม่' });
 
         await booking.save();
         res.json({ success: true, booking });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 6. ยกเลิกคำขอเข้าสวนน้ำ
+router.post('/admin/affiliate-book', async (req, res) => {
+    try {
+        const { affiliateName, affiliateCompany, visitDate, guests, adminUser } = req.body;
+        
+        const visit = new Date(visitDate);
+        visit.setHours(0,0,0,0);
+        
+        let processedGuests = [];
+        for (const guest of guests) {
+            processedGuests.push({
+                fullName: guest.fullName,
+                idCardNumber: guest.idCardNumber || '',
+                idCardExpiry: guest.idCardExpiry || null,
+                idCardImageUrl: guest.idCardImageUrl,
+                ticketType: '50_DISCOUNT' 
+            });
+        }
+
+        const bookingId = 'WP-AFF-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        const booking = new WaterparkBooking({
+            bookingId, 
+            username: 'AFFILIATE', 
+            bookingType: 'AFFILIATE', 
+            affiliateName,
+            affiliateCompany,
+            visitDate, 
+            isEmployeeEntering: true, 
+            guests: processedGuests,
+            totalFreeGuestsUsed: 0,
+            totalDiscountGuestsUsed: processedGuests.length,
+            status: 'Approved', 
+            hrApprover: adminUser,
+            approvalHistory: [
+                { action: 'CREATED', actor: adminUser, note: 'สร้างรายการจองสำหรับพนักงานเครือ' },
+                { action: 'HR_APPROVED', actor: adminUser, note: 'อนุมัติอัตโนมัติ (ทำรายการโดย Admin)' }
+            ]
+        });
+
+        await booking.save();
+        res.json({ success: true, booking });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put('/cancel/:id', async (req, res) => {
     try {
         const booking = await WaterparkBooking.findById(req.params.id);
@@ -315,12 +496,13 @@ router.put('/cancel/:id', async (req, res) => {
         }
 
         booking.status = 'Cancelled';
+        booking.approvalHistory.push({ action: 'CANCELLED', actor: booking.username, note: 'พนักงานยกเลิกรายการด้วยตนเอง' });
+
         await booking.save();
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 7. ดึงรายการรออนุมัติ
 router.get('/approvals/pending', async (req, res) => {
     try {
         const { username, role } = req.query;
@@ -365,7 +547,6 @@ router.get('/approvals/pending', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 8. อนุมัติ/ปฏิเสธ คำขอสวนน้ำ
 router.post('/approvals/action', async (req, res) => {
     try {
         const { bookingId, action, reason, adminUser, role } = req.body;
@@ -375,6 +556,7 @@ router.post('/approvals/action', async (req, res) => {
         if (action === 'REJECT') {
             booking.status = 'Rejected';
             booking.rejectReason = `ปฏิเสธโดย ${adminUser}: ${reason}`;
+            booking.approvalHistory.push({ action: 'REJECTED', actor: adminUser, note: `ปฏิเสธ: ${reason}` });
         } else if (action === 'APPROVE') {
             
             const today = new Date();
@@ -401,8 +583,15 @@ router.post('/approvals/action', async (req, res) => {
                 return res.status(400).json({ error: 'ไม่อนุมัติ: มีผู้ติดตามที่บัตรประชาชนหมดอายุ กรุณาคลิก "ให้แก้ไขใหม่" แทน' });
             }
 
-            if (role === 'admin') { booking.status = 'Approved'; booking.hrApprover = adminUser; } 
-            else { booking.status = 'Pending_HR'; }
+            if (role === 'admin') { 
+                booking.status = 'Approved'; 
+                booking.hrApprover = adminUser; 
+                booking.approvalHistory.push({ action: 'HR_APPROVED', actor: adminUser, note: 'แอดมิน/บุคคล อนุมัติขั้นสุดท้าย' });
+            } 
+            else { 
+                booking.status = 'Pending_HR'; 
+                booking.approvalHistory.push({ action: 'HEAD_APPROVED', actor: adminUser, note: 'หัวหน้าแผนกตรวจสอบและอนุมัติแล้ว' });
+            }
         }
 
         await booking.save();
@@ -410,7 +599,6 @@ router.post('/approvals/action', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 9. แอดมินตีกลับคำขอให้พนักงานแก้ไขใหม่
 router.post('/approvals/return', async (req, res) => {
     try {
         const { bookingId, reason, adminUser } = req.body;
@@ -419,13 +607,22 @@ router.post('/approvals/return', async (req, res) => {
 
         booking.status = 'Returned';
         booking.rejectReason = `ให้แก้ไขใหม่โดย ${adminUser}: ${reason || 'ข้อมูลไม่ถูกต้อง'}`;
-        await booking.save();
         
+        booking.approvalHistory.push({ action: 'RETURNED', actor: adminUser, note: `ตีกลับให้แก้ไข: ${reason}` });
+
+        await booking.save();
         res.json({ success: true, booking });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 10. ดึงข้อมูลรายงานตามวันที่
+router.get('/audit/:id', async (req, res) => {
+    try {
+        const booking = await WaterparkBooking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ error: 'ไม่พบรายการจอง' });
+        res.json(booking);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/reports/by-date', async (req, res) => {
     try {
         const dateParam = req.query.date;
@@ -443,10 +640,20 @@ router.get('/reports/by-date', async (req, res) => {
         let reportData = [];
 
         for (let b of bookings) {
-            const user = await User.findOne({ username: b.username });
-            if (!user) continue;
+            let dept = 'ไม่ระบุแผนก';
+            let empName = b.username;
 
-            const dept = user.department || 'ไม่ระบุแผนก';
+            if (b.bookingType === 'AFFILIATE') {
+                dept = `[เครือ] ${b.affiliateCompany || 'ไม่ระบุ'}`;
+                empName = b.affiliateName;
+            } else {
+                const user = await User.findOne({ username: b.username });
+                if (user) {
+                    dept = user.department || 'ไม่ระบุแผนก';
+                    empName = user.name;
+                }
+            }
+
             let guestList = [];
 
             for (let g of b.guests) {
@@ -467,9 +674,10 @@ router.get('/reports/by-date', async (req, res) => {
                 _id: b._id,
                 bookingId: b.bookingId,
                 department: dept,
-                employeeName: user.name,
+                employeeName: empName,
                 isEmployeeEntering: b.isEmployeeEntering,
-                guests: guestList
+                guests: guestList,
+                bookingType: b.bookingType || 'NORMAL'
             });
         }
 
@@ -479,7 +687,6 @@ router.get('/reports/by-date', async (req, res) => {
     }
 });
 
-// 11. Admin: ยกเลิกรายการจองทั้งหมด
 router.put('/admin/cancel/:id', async (req, res) => {
     try {
         const booking = await WaterparkBooking.findById(req.params.id);
@@ -496,12 +703,13 @@ router.put('/admin/cancel/:id', async (req, res) => {
 
         booking.status = 'Cancelled';
         booking.rejectReason = `ยกเลิกโดยแอดมิน: ${req.body.adminUser}`;
+        booking.approvalHistory.push({ action: 'CANCELLED', actor: req.body.adminUser, note: 'แอดมินยกเลิกรายการ' });
+
         await booking.save();
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 12. Admin: ลบผู้ติดตามออกทีละคน
 router.put('/admin/remove-guest/:id', async (req, res) => {
     try {
         const { guestIndex, adminUser } = req.body;
@@ -536,11 +744,15 @@ router.put('/admin/remove-guest/:id', async (req, res) => {
             booking.totalDiscountGuestsUsed = Math.max(0, booking.totalDiscountGuestsUsed - 1);
         }
 
+        const guestName = removedGuest.fullName;
         booking.guests.splice(guestIndex, 1);
+
+        booking.approvalHistory.push({ action: 'EDITED', actor: adminUser, note: `แอดมินลบผู้ติดตาม: ${guestName}` });
 
         if (booking.guests.length === 0 && !booking.isEmployeeEntering) {
             booking.status = 'Cancelled';
             booking.rejectReason = `ยกเลิกอัตโนมัติ (ลบผู้ใช้สิทธิ์หมดแล้ว) โดยแอดมิน: ${adminUser}`;
+            booking.approvalHistory.push({ action: 'CANCELLED', actor: 'SYSTEM', note: 'ยกเลิกอัตโนมัติเนื่องจากลบผู้ติดตามหมดแล้ว' });
         }
 
         await booking.save();
@@ -548,7 +760,6 @@ router.put('/admin/remove-guest/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 13. Admin: ดึงข้อมูลประวัติการลงทะเบียนญาติ
 router.get('/admin/relatives/:username', async (req, res) => {
     try {
         const relatives = await WaterparkRelative.find({ username: req.params.username }).sort({ createdAt: -1 });
@@ -558,9 +769,6 @@ router.get('/admin/relatives/:username', async (req, res) => {
     }
 });
 
-// ==========================================
-// 🧹 CRON JOB 1: เคลียร์รูปและส่งรายงานการลบรูปลง PDF (ทุกวันอาทิตย์ 17:00 น.)
-// ==========================================
 cron.schedule('0 17 * * 0', async () => {
     try {
         console.log('[Cron Job] Weekly PDF Report & Cleanup starting (Sunday 17:00)...');
@@ -609,7 +817,10 @@ cron.schedule('0 17 * * 0', async () => {
                         externalGuestImages.add(g.idCardImageUrl); 
 
                         doc.fontSize(16).text(`รหัสการจอง (Booking ID): ${b.bookingId}`);
-                        doc.fontSize(14).text(`พนักงานที่ขอสิทธิ์: ${b.username}`);
+                        
+                        const requesterText = b.bookingType === 'AFFILIATE' ? `${b.affiliateName} (เครือ ${b.affiliateCompany})` : b.username;
+                        doc.fontSize(14).text(`พนักงานที่ขอสิทธิ์: ${requesterText}`);
+                        
                         doc.text(`ชื่อผู้ติดตาม: ${g.fullName}`);
                         doc.text(`เลขบัตรประชาชน: ${g.idCardNumber || 'ไม่ระบุ'}`);
                         doc.moveDown(0.5);
@@ -686,11 +897,7 @@ cron.schedule('0 17 * * 0', async () => {
     }
 });
 
-// ==========================================
-// ⏰ CRON JOB 2: ส่งใบลงนามให้ Admissions
-// ⚠️ ตอนนี้ตั้งค่าเป็น '0 6 * * *' (รันทุกเช้าเวลา 06:00 น.) เพื่อทดสอบ
-// ==========================================
-cron.schedule('0 6 * * *', async () => {
+cron.schedule('0 8 * * *', async () => {
     try {
         console.log('[Cron Job] Daily Admissions Report starting...');
         
@@ -717,15 +924,22 @@ cron.schedule('0 6 * * *', async () => {
 
         const grouped = {};
         for (let b of bookings) {
-            const user = await User.findOne({ username: b.username });
-            const dept = user ? (user.department || 'ไม่ระบุแผนก') : 'ไม่ระบุแผนก';
-            const empName = user ? user.name : b.username;
+            let dept = 'ไม่ระบุแผนก';
+            let empName = b.username;
+            
+            if (b.bookingType === 'AFFILIATE') {
+                dept = `[เครือ] ${b.affiliateCompany || 'ไม่ระบุ'}`;
+                empName = b.affiliateName;
+            } else {
+                const user = await User.findOne({ username: b.username });
+                dept = user ? (user.department || 'ไม่ระบุแผนก') : 'ไม่ระบุแผนก';
+                empName = user ? user.name : b.username;
+            }
             
             if (!grouped[dept]) grouped[dept] = [];
-            grouped[dept].push({ ...b.toObject(), employeeName: empName });
+            grouped[dept].push({ ...b.toObject(), employeeName: empName, isAffiliate: b.bookingType === 'AFFILIATE' });
         }
 
-        // 💡 สร้าง PDF เป็นกระดาษ A4 แนวนอน (Landscape) เพื่อให้เหมือนหน้าเว็บ
         const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
         const buffers = [];
         doc.on('data', buffers.push.bind(buffers));
@@ -740,12 +954,10 @@ cron.schedule('0 6 * * *', async () => {
 
         let y = 30;
 
-        // 💡 ฟังก์ชันสร้างเส้นประ
         function drawDottedLine(startX, startY, endX) {
             doc.moveTo(startX, startY).lineTo(endX, startY).dash(2, { space: 2 }).stroke('#cccccc').undash();
         }
 
-        // 💡 ฟังก์ชันวาดหัวตาราง
         function drawTableHeader() {
             doc.rect(30, y, 780, 25).fillAndStroke('#f1f5f9', '#999999');
             doc.fillColor('#000000').fontSize(14).font('THSarabunNew');
@@ -768,7 +980,6 @@ cron.schedule('0 6 * * *', async () => {
             y += 25;
         }
 
-        // 💡 ฟังก์ชันขึ้นหน้าใหม่ถ้ายาวเกินไป
         function checkPageAdd(heightNeeded) {
             if (y + heightNeeded > 550) {
                 doc.addPage({ margin: 30, size: 'A4', layout: 'landscape' });
@@ -787,7 +998,6 @@ cron.schedule('0 6 * * *', async () => {
         let globalIndex = 1;
         const sortedDepts = Object.keys(grouped).sort();
 
-        // 💡 ลูปวาดตารางเหมือนหน้าเว็บเป๊ะๆ
         for (const dept of sortedDepts) {
             checkPageAdd(25);
             doc.rect(30, y, 780, 25).fillAndStroke('#e2e8f0', '#999999');
@@ -804,17 +1014,17 @@ cron.schedule('0 6 * * *', async () => {
 
                 if (booking.isEmployeeEntering) {
                     const currentY = y;
-                    // 💡 เปลี่ยนมาวาดเฉพาะคอลัมน์ขวา (เริ่มตั้งแต่พิกัด 185)
                     doc.rect(185, currentY, 625, 25).stroke('#999999');
                     
-                    doc.fillColor('#000000').text(`${booking.employeeName} (พนักงาน)`, 195, currentY + 6, { width: 135 });
+                    const empLabel = booking.isAffiliate ? '(พนักงานเครือ)' : '(พนักงาน)';
+                    
+                    doc.fillColor('#000000').text(`${booking.employeeName} ${empLabel}`, 195, currentY + 6, { width: 135 });
                     doc.fillColor('#2563eb').text(`เข้าฟรี`, 340, currentY + 6, { width: 80, align: 'center' });
                     doc.fillColor('#000000').text(`-`, 420, currentY + 6, { width: 115, align: 'center' });
                     
                     drawDottedLine(545, currentY + 18, 640);
                     drawDottedLine(660, currentY + 18, 800);
 
-                    // วาดเส้นคั่นคอลัมน์ด้านใน
                     doc.moveTo(340, currentY).lineTo(340, currentY + 25).stroke('#999999');
                     doc.moveTo(420, currentY).lineTo(420, currentY + 25).stroke('#999999');
                     doc.moveTo(535, currentY).lineTo(535, currentY + 25).stroke('#999999');
@@ -825,7 +1035,6 @@ cron.schedule('0 6 * * *', async () => {
 
                 for (const guest of booking.guests) {
                     const currentY = y;
-                    // 💡 เปลี่ยนมาวาดเฉพาะคอลัมน์ขวา (เริ่มตั้งแต่พิกัด 185)
                     doc.rect(185, currentY, 625, 25).stroke('#999999');
                     
                     let idCard = guest.idCardNumber || '';
@@ -855,18 +1064,15 @@ cron.schedule('0 6 * * *', async () => {
                 const empEndY = y;
                 const empHeight = empEndY - empStartY;
                 
-                // 💡 วาดกรอบเปล่าๆ กล่องใหญ่ รวบยอดให้ "ลำดับ" และ "ชื่อพนักงาน" (เส้นแนวนอนจะไม่ไปตัดทับชื่อแล้ว)
-                doc.rect(30, empStartY, 40, empHeight).stroke('#999999'); // ลำดับ
-                doc.rect(70, empStartY, 115, empHeight).stroke('#999999'); // ชื่อพนักงาน
+                doc.rect(30, empStartY, 40, empHeight).stroke('#999999'); 
+                doc.rect(70, empStartY, 115, empHeight).stroke('#999999'); 
 
-                // ผสานเซลล์ชื่อพนักงาน (Rowspan) ไว้ตรงกึ่งกลางแนวตั้ง
                 const textY = empStartY + (empHeight / 2) - 8;
                 doc.fillColor('#000000').text(`${globalIndex++}`, 30, textY, { width: 40, align: 'center' });
                 doc.text(`${booking.employeeName}`, 75, textY, { width: 105, align: 'left' });
             }
         }
 
-        // ใส่ Footer 
         doc.fontSize(12).fillColor('#666666').text(`พิมพ์โดย: ระบบอัตโนมัติ | เวลา: ${new Date().toLocaleString('th-TH')}`, 30, 560, { width: 780, align: 'right' });
 
         doc.end();

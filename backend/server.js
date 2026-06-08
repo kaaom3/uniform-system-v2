@@ -42,6 +42,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(express.static('public'));
 
 // เปิดใช้งาน API ของระบบสวนน้ำ
 app.use('/api/waterpark', waterparkRoutes);

@@ -8,6 +8,14 @@ const guestSchema = new mongoose.Schema({
     ticketType: { type: String, enum: ['FREE', '50_DISCOUNT'], required: true }
 });
 
+// 💡 สร้าง Schema ย่อยสำหรับเก็บประวัติแต่ละสเต็ป
+const approvalHistorySchema = new mongoose.Schema({
+    action: { type: String, required: true }, // เช่น CREATED, HEAD_APPROVED, HR_APPROVED, REJECTED, RETURNED, CANCELLED
+    actor: { type: String, required: true },  // ชื่อ/รหัสพนักงานที่กด
+    timestamp: { type: Date, default: Date.now }, // เวลาที่กด
+    note: { type: String, default: '' }       // เหตุผลประกอบ (ถ้ามี)
+});
+
 const waterparkBookingSchema = new mongoose.Schema({
     bookingId: { type: String, required: true, unique: true },
     username: { type: String, required: true },
@@ -18,9 +26,12 @@ const waterparkBookingSchema = new mongoose.Schema({
     totalFreeGuestsUsed: { type: Number, default: 0 }, 
     totalDiscountGuestsUsed: { type: Number, default: 0 },
     
-    // 💡 ฟิลด์สำหรับระบบจองด่วน
     isUrgent: { type: Boolean, default: false },
     urgentReason: { type: String, default: '' },
+
+    bookingType: { type: String, enum: ['NORMAL', 'AFFILIATE'], default: 'NORMAL' },
+    affiliateName: { type: String, default: '' },
+    affiliateCompany: { type: String, default: '' },
 
     status: { 
         type: String, 
@@ -29,7 +40,11 @@ const waterparkBookingSchema = new mongoose.Schema({
     },
     headApprover: { type: String, default: '' }, 
     hrApprover: { type: String, default: '' },   
-    rejectReason: { type: String, default: '' }
+    rejectReason: { type: String, default: '' },
+    
+    // 💡 ฟิลด์เก็บประวัติแบบ Array
+    approvalHistory: [approvalHistorySchema]
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('WaterparkBooking', waterparkBookingSchema);

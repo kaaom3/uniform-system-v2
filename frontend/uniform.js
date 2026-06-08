@@ -222,14 +222,14 @@ function toggleRequestForm() {
     if (document.getElementById('request-reason-type').value === 'Damaged/Lost') {
         document.getElementById('new-request-form').classList.add('hidden'); 
         document.getElementById('return-request-form').classList.remove('hidden');
-        const btn = document.getElementById('request-btn'); btn.textContent = 'ส่งคำขอคืน'; 
-        btn.className = "w-full mt-8 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition-all flex justify-center";
+        const btn = document.getElementById('request-btn'); btn.textContent = 'ส่งคำขอคืน';
+        btn.className = "w-full mt-8 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 px-4 rounded-lg shadow-md transition-all flex justify-center";
         populateReturnableItemsDropdown();
     } else {
         document.getElementById('new-request-form').classList.remove('hidden'); 
         document.getElementById('return-request-form').classList.add('hidden');
-        const btn = document.getElementById('request-btn'); btn.textContent = 'ส่งคำขอเบิก'; 
-        btn.className = "w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition-all flex justify-center";
+        const btn = document.getElementById('request-btn'); btn.textContent = 'ส่งคำขอเบิก';
+        btn.className = "w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-lg shadow-md transition-all flex justify-center";
     }
 }
 

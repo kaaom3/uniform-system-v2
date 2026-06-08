@@ -11,9 +11,13 @@ const WPState = {
     tier: 'Tier1_Staff',
     maxFree: 4,
     freeRemaining: 0,
+    isFreeQuotaLocked: false, 
     relatives: [],
     regUnlocked: false,
-    cart: [],
+    
+    cart: [], 
+    relativesCart: [], 
+    
     allBookings: [],     
     editingBookingId: null 
 };
@@ -21,18 +25,16 @@ const WPState = {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('wp-user-name').textContent = currentUser.name;
     
-    // 💡 ปรับให้เลือกปฏิทินวันนี้ได้ (ไม่ล็อค 3 วัน) แต่ค่าเริ่มต้นคือ 3 วันล่วงหน้า
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
-    const d = new Date(); d.setDate(d.getDate() + 3);
+    const d = new Date(); 
+    d.setDate(d.getDate() + 3);
     const defaultDateStr = d.toISOString().split('T')[0];
     
     const dateInput = document.getElementById('wp-visit-date');
     if (dateInput) {
-        dateInput.min = todayStr; // อนุญาตให้เลือกตั้งแต่วันนี้
-        dateInput.value = defaultDateStr; // ค่าเริ่มต้น 3 วันล่วงหน้า
-        
-        // 💡 ตรวจจับการเปลี่ยนวันที่ เพื่อเปิดกล่องให้กรอกเหตุผล
+        dateInput.min = todayStr;
+        dateInput.value = defaultDateStr;
         dateInput.addEventListener('change', checkUrgentDate);
     }
     
@@ -41,7 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
-// 💡 ฟังก์ชันตรวจจับจองด่วน
 function checkUrgentDate() {
     const dateInput = document.getElementById('wp-visit-date');
     if (!dateInput || !dateInput.value) return;
@@ -51,11 +52,14 @@ function checkUrgentDate() {
     const diffDays = Math.floor((vDate - tDate) / (1000 * 60 * 60 * 24));
 
     const container = document.getElementById('urgent-reason-container');
-    if (diffDays < 3 && diffDays >= 0) {
-        container.classList.remove('hidden');
-    } else {
-        container.classList.add('hidden');
-        document.getElementById('wp-urgent-reason').value = '';
+    if (container) {
+        if (diffDays < 3 && diffDays >= 0) {
+            container.classList.remove('hidden');
+        } else {
+            container.classList.add('hidden');
+            const reasonInput = document.getElementById('wp-urgent-reason');
+            if (reasonInput) reasonInput.value = '';
+        }
     }
 }
 
@@ -83,9 +87,14 @@ async function loadWaterparkDashboard() {
         WPState.tier = data.tier;
         WPState.maxFree = data.maxFree;
         WPState.freeRemaining = data.freeRemaining;
+        WPState.isFreeQuotaLocked = data.isFreeQuotaLocked || false; 
         WPState.relatives = data.relatives || [];
         WPState.regUnlocked = data.regUnlocked || false;
         WPState.allBookings = data.allBookings || [];
+
+        if (WPState.isFreeQuotaLocked && WPState.tier !== 'Tier3_Director') {
+            WPState.freeRemaining = 0;
+        }
 
         setupUIByTier();
         
@@ -150,9 +159,20 @@ function setupUIByTier() {
     const btnFree = document.getElementById('wp-btn-add-guest');
     const toggleBtnText = document.getElementById('wp-toggle-freeform-text');
 
+    if (WPState.isFreeQuotaLocked && WPState.tier !== 'Tier3_Director') {
+        note.innerHTML = '<span class="text-yellow-300">⚠️ โควต้าฟรีระงับชั่วคราว มีคิวล่วงหน้าค้างอยู่ (เพิ่มแบบลด 50% ได้)</span>';
+    } else {
+        if (WPState.tier === 'Tier1_Staff') {
+            note.textContent = WPState.regUnlocked ? 'ระบบเปิดให้แก้ไขญาติได้ กรุณาเพิ่มรายชื่อที่แผงด้านล่างก่อนจอง (สูงสุด 8 คน)' : 'หากต้องการเพิ่มบุคคลภายนอก สามารถเพิ่มได้ที่ฟอร์มด้านขวา (ลด 50%)';
+        } else if (WPState.tier === 'Tier2_Manager') {
+            note.textContent = 'สามารถพิมพ์ชื่อเพื่อใช้โควต้าฟรี หรือกดปุ่มลด 50% หากไม่ต้องการหักโควต้า';
+        } else if (WPState.tier === 'Tier3_Director') {
+            note.textContent = 'สิทธิ์จองฟรีไม่จำกัดจำนวน';
+        }
+    }
+
     if (WPState.tier === 'Tier1_Staff') {
         tierDisplay.textContent = 'Staff / Sup (ฟรี 4)';
-        note.textContent = WPState.regUnlocked ? 'ระบบเปิดให้แก้ไขญาติได้ กรุณาเพิ่มรายชื่อที่แผงด้านล่างก่อนจอง (สูงสุด 8 คน)' : 'หากต้องการเพิ่มบุคคลภายนอก สามารถเพิ่มได้ที่ฟอร์มด้านขวา (ลด 50%)';
         
         if (WPState.regUnlocked) {
             document.getElementById('wp-relative-panel')?.classList.remove('hidden');
@@ -173,7 +193,7 @@ function setupUIByTier() {
             btnFree.dataset.forceDiscount = 'true';
         }
         const textLabel = document.getElementById('wp-btn-add-guest-text');
-        if(textLabel) textLabel.textContent = 'เพิ่ม (ส่วนลด 50%)';
+        if(textLabel) textLabel.textContent = 'เพิ่มลงตะกร้า (ลด 50%)';
         
         if(btnDiscount) btnDiscount.classList.add('hidden'); 
         renderRelativesList();
@@ -181,11 +201,9 @@ function setupUIByTier() {
     else {
         if (WPState.tier === 'Tier2_Manager') {
             tierDisplay.textContent = 'Asst / Manager (ฟรี 5)';
-            note.textContent = 'สามารถพิมพ์ชื่อเพื่อใช้โควต้าฟรี หรือกดปุ่มลด 50% หากไม่ต้องการหักโควต้า';
             if(btnDiscount) { btnDiscount.classList.remove('hidden'); btnDiscount.classList.add('flex'); }
         } else if (WPState.tier === 'Tier3_Director') {
             tierDisplay.textContent = 'Director (ฟรีไม่จำกัด)';
-            note.textContent = 'สิทธิ์จองฟรีไม่จำกัดจำนวน';
             document.getElementById('wp-free-remain').textContent = '∞';
             document.getElementById('wp-free-total').textContent = '';
             if(btnDiscount) btnDiscount.classList.add('hidden'); 
@@ -204,7 +222,7 @@ function setupUIByTier() {
             btnFree.dataset.forceDiscount = 'false'; 
         }
         const textLabel = document.getElementById('wp-btn-add-guest-text');
-        if(textLabel) textLabel.textContent = 'เพิ่ม (ใช้โควต้าฟรี)';
+        if(textLabel) textLabel.textContent = WPState.isFreeQuotaLocked ? 'เพิ่มลงตะกร้า (ถูกปัดเป็นลด 50%)' : 'เพิ่มลงตะกร้า (ใช้โควต้าฟรี)';
     }
 
     document.getElementById('wp-guest-freeform-section')?.classList.add('hidden');
@@ -219,9 +237,10 @@ function renderRelativesList() {
 
     if (leftList) {
         leftList.innerHTML = '';
-        if(countLabel) countLabel.textContent = `${WPState.relatives.length}/8`;
+        const totalCount = WPState.relatives.length + WPState.relativesCart.length;
+        if(countLabel) countLabel.textContent = `${totalCount}/8`;
 
-        if (WPState.relatives.length >= 8) {
+        if (totalCount >= 8) {
             if(form) form.classList.add('hidden');
             if(lockedMsg) lockedMsg.classList.remove('hidden');
         } else {
@@ -230,7 +249,7 @@ function renderRelativesList() {
         }
 
         if (WPState.relatives.length === 0) {
-            leftList.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">ยังไม่ได้ลงทะเบียนญาติ</p>';
+            leftList.innerHTML = '<p class="text-xs text-slate-400 text-center py-2">ยังไม่ได้ลงทะเบียนญาติ</p>';
         } else {
             WPState.relatives.forEach(rel => {
                 leftList.innerHTML += `
@@ -251,7 +270,7 @@ function renderRelativesList() {
     const dropdownSection = document.getElementById('wp-guest-dropdown-section');
     if (!dropdownSection) return;
 
-    let html = `<label class="block text-[10px] font-bold text-slate-500 mb-1.5">เลือกจากรายชื่อที่ลงทะเบียนไว้ <span class="text-emerald-600">(ใช้โควต้าฟรี)</span></label>`;
+    let html = `<label class="block text-[10px] font-bold text-slate-500 mb-1.5">เลือกจากรายชื่อที่ลงทะเบียนไว้ <span class="${WPState.isFreeQuotaLocked ? 'text-amber-500' : 'text-emerald-600'}">(${WPState.isFreeQuotaLocked ? 'ถูกระงับ จะถูกปัดเป็นลด 50%' : 'ใช้โควต้าฟรี'})</span></label>`;
 
     if (WPState.relatives.length === 0) {
         html += `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center"><p class="text-xs text-slate-400 font-medium">ยังไม่มีรายชื่อญาติในระบบ (กรุณาติดต่อ HR)</p></div>`;
@@ -279,8 +298,62 @@ function renderRelativesList() {
         html += `</div>`;
     }
     
-    html += `<p class="text-[9px] text-slate-400 mt-2">* หากโควต้าฟรีเดือนนี้หมด ระบบจะปัดเป็นส่วนลด 50% ให้โดยอัตโนมัติ</p>`;
+    if (WPState.isFreeQuotaLocked) {
+        html += `<p class="text-[9px] text-amber-500 mt-2 font-bold">* โควต้าฟรีถูกระงับชั่วคราวเนื่องจากคิวจองล่วงหน้า จะได้ส่วนลด 50% แทน</p>`;
+    } else {
+        html += `<p class="text-[9px] text-slate-400 mt-2">* หากโควต้าฟรีเดือนนี้หมด ระบบจะปัดเป็นส่วนลด 50% ให้โดยอัตโนมัติ</p>`;
+    }
+    
     dropdownSection.innerHTML = html;
+}
+
+function renderRelativesCart() {
+    const list = document.getElementById('wp-pending-rels-list');
+    const container = document.getElementById('wp-pending-rels-container');
+    const countLabel = document.getElementById('wp-pending-rel-count');
+    
+    if (!list || !container) return;
+    list.innerHTML = '';
+    
+    if (WPState.relativesCart.length === 0) {
+        container.classList.add('hidden');
+    } else {
+        container.classList.remove('hidden');
+        if(countLabel) countLabel.textContent = WPState.relativesCart.length;
+        
+        WPState.relativesCart.forEach((item, index) => {
+            list.innerHTML += `
+                <div class="flex items-center justify-between p-2 bg-white/60 border border-emerald-200 rounded-lg shadow-sm mb-1.5">
+                    <div class="flex items-center gap-2">
+                        <img src="${item.localUrl}" class="w-8 h-5 object-cover rounded border border-slate-200">
+                        <div>
+                            <p class="text-[10px] font-bold text-emerald-800 leading-tight">${item.fullName}</p>
+                            <p class="text-[9px] font-mono text-emerald-600">${item.idCardNumber}</p>
+                        </div>
+                    </div>
+                    <button type="button" class="del-rel-cart-btn text-rose-400 hover:text-rose-600 p-1 bg-white rounded transition-colors" data-index="${index}">
+                        <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            `;
+        });
+    }
+    
+    const countTopLabel = document.getElementById('wp-rel-count');
+    if(countTopLabel) {
+        const totalCount = WPState.relatives.length + WPState.relativesCart.length;
+        countTopLabel.textContent = `${totalCount}/8`;
+        
+        const form = document.getElementById('wp-add-rel-form');
+        const lockedMsg = document.getElementById('wp-locked-msg');
+        if (totalCount >= 8) {
+            if(form) form.classList.add('hidden');
+            if(lockedMsg) lockedMsg.classList.remove('hidden');
+        } else {
+            if(form) form.classList.remove('hidden');
+            if(lockedMsg) lockedMsg.classList.add('hidden');
+        }
+    }
 }
 
 function renderCart() {
@@ -314,10 +387,12 @@ function renderCart() {
                 }
             }
 
+            const imgPreview = guest.localUrl ? guest.localUrl : getImageUrl(guest.idCardImageUrl);
+
             list.innerHTML += `
-                <div class="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <div class="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-sm mb-2 last:mb-0">
                     <div class="flex items-center gap-2.5 w-full pr-2 overflow-hidden">
-                        <img src="${getImageUrl(guest.idCardImageUrl)}" class="w-8 h-5 object-cover rounded border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" onclick="openImageModal(this.src)" title="คลิกดูรูป">
+                        <img src="${imgPreview}" class="w-8 h-5 object-cover rounded border border-slate-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity" onclick="openImageModal(this.src)" title="คลิกดูรูป">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between w-full min-w-0 gap-1 sm:gap-2">
                             <div>
                                 <p class="text-[11px] font-bold text-slate-800 truncate leading-tight">${guest.fullName}</p>
@@ -439,6 +514,94 @@ window.closeWpHistoryModal = function() {
     setTimeout(() => { m.classList.add('hidden'); }, 300);
 }
 
+// Parse ID card data from OCR text using Tesseract
+async function scanThaiIDCard(fileInputId, prefix) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput.files[0];
+    const btn = document.getElementById(`${prefix}scan-btn`);
+    
+    if (!file) return showNotification('กรุณาเลือกรูปภาพก่อนสแกน', 'error');
+
+    btn.dataset.isProcessing = 'true';
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> กำลังอ่าน...';
+    btn.disabled = true;
+
+    try {
+        if (typeof Tesseract === 'undefined') {
+            throw new Error('ระบบ OCR ยังไม่พร้อมใช้งาน กรุณาลองใหม่');
+        }
+
+        const worker = await Tesseract.createWorker('tha+eng');
+        const ret = await worker.recognize(file);
+        const text = ret.data.text;
+        await worker.terminate();
+
+        // 1. Regex หาเลข 13 หลัก
+        const cleanText = text.replace(/-/g, '').replace(/ /g, '');
+        const idMatch = cleanText.match(/\d{13}/);
+        if (idMatch) {
+            document.getElementById(`${prefix}idcard-no`).value = idMatch[0];
+        }
+
+        // 2. Regex หาชื่อ-สกุล (แบบง่าย)
+        const nameMatch = text.match(/(?:ชื่อตัวและชื่อสกุล|Name)\s*([ก-๙\s]+)/);
+        if (nameMatch) {
+            document.getElementById(`${prefix}name`).value = nameMatch[1].trim();
+        }
+
+        // Extract ID card number using regex
+        // ค้นหารูปแบบวันที่ เช่น "12 Jan 2028", "12 ม.ค. 2571", "12 ม ค 2571"
+        const dateRegex = /(\d{1,2})\s*([a-zA-Z]{3,4}|[ก-๙]\.?\s*[ก-๙]\.?)\s*(\d{4})/g;
+        let dates = [];
+        let match;
+        while ((match = dateRegex.exec(text)) !== null) {
+            dates.push({
+                day: match[1],
+                monthRaw: match[2],
+                year: parseInt(match[3])
+            });
+        }
+
+        if (dates.length > 0) {
+            // สมมติฐาน: วันหมดอายุ มักจะเป็นปีที่มากที่สุดในบัตร
+            dates.sort((a, b) => b.year - a.year);
+            let expDate = dates[0];
+
+            // ฟังก์ชันแปลงเดือนภาษาไทย/อังกฤษ เป็นตัวเลข 01-12
+            const parseMonth = (m) => {
+                const cleanM = m.replace(/[\.\s]/g, '').toLowerCase();
+                const monthMap = {
+                    'มค': '01', 'กพ': '02', 'มีค': '03', 'เมย': '04', 'พค': '05', 'มิย': '06',
+                    'กค': '07', 'สค': '08', 'กย': '09', 'ตค': '10', 'พย': '11', 'ธค': '12',
+                    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+                    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+                };
+                return monthMap[cleanM] || '01'; // Default เดือน 1 ถ้าหาไม่เจอ
+            };
+
+            let yyyy = expDate.year;
+            if (yyyy >= 2500) yyyy -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+            
+            let mm = parseMonth(expDate.monthRaw);
+            let dd = expDate.day.padStart(2, '0');
+
+            // เติมลงใน input type="date" (format: YYYY-MM-DD)
+            const formattedDate = `${yyyy}-${mm}-${dd}`;
+            const expiryInput = document.getElementById(`${prefix}idcard-expiry`);
+            if(expiryInput) expiryInput.value = formattedDate;
+        }
+
+        showNotification('ดึงข้อมูลสำเร็จ กรุณาตรวจสอบและแก้ไขให้ถูกต้องอีกครั้ง', 'success');
+    } catch (e) {
+        showNotification('สแกนไม่สำเร็จ กรุณากรอกข้อมูลเอง', 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.dataset.isProcessing = 'false';
+    }
+}
+
 function setupEventListeners() {
     
     const toggleFreeformBtn = document.getElementById('wp-toggle-freeform-btn');
@@ -456,40 +619,107 @@ function setupEventListeners() {
         toggleContainer.classList.remove('hidden');
     });
 
+    // Bind OCR scan button handlers
+    document.getElementById('wp-rel-idcard')?.addEventListener('change', (e) => {
+        const btn = document.getElementById('wp-rel-scan-btn');
+        if (e.target.files.length > 0) btn.classList.remove('hidden');
+        else btn.classList.add('hidden');
+    });
+    
+    document.getElementById('wp-guest-idcard')?.addEventListener('change', (e) => {
+        const btn = document.getElementById('wp-guest-scan-btn');
+        if (e.target.files.length > 0) btn.classList.remove('hidden');
+        else btn.classList.add('hidden');
+    });
+
+    document.getElementById('wp-rel-scan-btn')?.addEventListener('click', () => scanThaiIDCard('wp-rel-idcard', 'wp-rel-'));
+    document.getElementById('wp-guest-scan-btn')?.addEventListener('click', () => scanThaiIDCard('wp-guest-idcard', 'wp-guest-'));
+
+    // นำเข้าตะกร้าญาติ (เตรียมบันทึก)
     document.getElementById('wp-add-rel-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btn = document.getElementById('wp-btn-add-rel');
-        if (btn.disabled || btn.dataset.isProcessing === 'true') return;
         
         const nameInput = document.getElementById('wp-rel-name').value.trim();
         const idCardNoInput = document.getElementById('wp-rel-idcard-no').value.trim();
         const idCardExpInput = document.getElementById('wp-rel-idcard-expiry').value;
-        const fileInput = document.getElementById('wp-rel-idcard').files[0];
+        const fileInput = document.getElementById('wp-rel-idcard');
+        const file = fileInput.files[0];
         
-        if (!nameInput || !idCardNoInput || !idCardExpInput || !fileInput) return showNotification('กรุณากรอกข้อมูลและแนบรูปบัตรให้ครบถ้วน', 'error');
+        if (!nameInput || !idCardNoInput || !file) return showNotification('กรุณากรอกข้อมูลและแนบรูปให้ครบถ้วน', 'error');
         if (idCardNoInput.length !== 13) return showNotification('เลขบัตรประชาชนต้องมี 13 หลัก', 'error');
+        if (file.size > 2 * 1024 * 1024) return showNotification('ขนาดไฟล์รูปภาพต้องไม่เกิน 2 MB', 'error');
         
-        if (fileInput.size > 2 * 1024 * 1024) {
-            return showNotification('ขนาดไฟล์รูปภาพต้องไม่เกิน 2 MB', 'error');
+        const totalCount = WPState.relatives.length + WPState.relativesCart.length;
+        if (totalCount >= 8) return showNotification('โควต้าลงทะเบียนญาติครบ 8 คนแล้ว', 'error');
+
+        const localUrl = URL.createObjectURL(file);
+
+        WPState.relativesCart.push({
+            fullName: nameInput,
+            idCardNumber: idCardNoInput,
+            idCardExpiry: idCardExpInput,
+            file: file,
+            localUrl: localUrl
+        });
+
+        document.getElementById('wp-rel-name').value = '';
+        document.getElementById('wp-rel-idcard-no').value = '';
+        document.getElementById('wp-rel-idcard-expiry').value = '';
+        fileInput.value = '';
+        document.getElementById('wp-rel-scan-btn').classList.add('hidden'); // ซ่อนปุ่มสแกน
+        
+        renderRelativesCart();
+    });
+
+    // กดลบออกจากตะกร้าญาติ
+    document.addEventListener('click', (e) => {
+        if (e.target.matches('.del-rel-cart-btn') || e.target.closest('.del-rel-cart-btn')) {
+            const btn = e.target.closest('.del-rel-cart-btn');
+            const index = parseInt(btn.dataset.index);
+            URL.revokeObjectURL(WPState.relativesCart[index].localUrl); // Free memory
+            WPState.relativesCart.splice(index, 1);
+            renderRelativesCart();
         }
-        
+    });
+
+    // กดยืนยันอัปโหลดลงทะเบียนญาติทั้งหมด
+    document.getElementById('wp-btn-save-all-rels')?.addEventListener('click', async (e) => {
+        const btn = e.target;
+        if (btn.disabled || btn.dataset.isProcessing === 'true') return;
+        if (WPState.relativesCart.length === 0) return;
+
         btn.dataset.isProcessing = 'true';
         showLoadingButton(btn, true);
 
+        let successCount = 0;
         try {
-            const formData = new FormData(); formData.append('image', fileInput);
-            const uploadRes = await apiCall('/api/upload', 'POST', formData);
+            for (const item of WPState.relativesCart) {
+                const formData = new FormData(); formData.append('image', item.file);
+                const uploadRes = await apiCall('/api/upload', 'POST', formData);
+                
+                await apiCall('/api/waterpark/relatives', 'POST', {
+                    username: currentUser.username, 
+                    fullName: item.fullName, 
+                    idCardNumber: item.idCardNumber, 
+                    idCardExpiry: item.idCardExpiry, 
+                    idCardImageUrl: uploadRes.imageUrl
+                });
+                successCount++;
+            }
             
-            await apiCall('/api/waterpark/relatives', 'POST', {
-                username: currentUser.username, fullName: nameInput, idCardNumber: idCardNoInput, idCardExpiry: idCardExpInput, idCardImageUrl: uploadRes.imageUrl
-            });
-            showNotification('เพิ่มรายชื่อญาติสำเร็จ');
-            document.getElementById('wp-add-rel-form').reset();
+            showNotification(`ลงทะเบียนญาติสำเร็จ ${successCount} รายการ`, 'success');
+            WPState.relativesCart = [];
+            renderRelativesCart();
             loadWaterparkDashboard(); 
-        } catch(err) { showNotification(err.message, 'error'); } 
-        finally { showLoadingButton(btn, false, 'บันทึกรายชื่อ'); btn.dataset.isProcessing = 'false'; }
+        } catch(err) { 
+            showNotification(err.message, 'error'); 
+        } finally { 
+            showLoadingButton(btn, false, 'บันทึกรายชื่อทั้งหมดสู่ระบบ'); 
+            btn.dataset.isProcessing = 'false'; 
+        }
     });
 
+    // ระบบจองสิทธิ์
     document.addEventListener('click', async (e) => {
         if (e.target.matches('.add-rel-cart-btn') || e.target.closest('.add-rel-cart-btn')) {
             const btn = e.target.closest('.add-rel-cart-btn');
@@ -497,7 +727,13 @@ function setupEventListeners() {
             const relData = WPState.relatives.find(r => r._id === relId);
             if (relData) {
                 if (WPState.cart.find(c => c.fullName === relData.fullName)) return showNotification('เพิ่มรายชื่อนี้ไปแล้ว', 'error');
-                WPState.cart.push({ fullName: relData.fullName, idCardNumber: relData.idCardNumber, idCardExpiry: relData.idCardExpiry, idCardImageUrl: relData.idCardImageUrl, forceDiscount: false });
+                WPState.cart.push({ 
+                    fullName: relData.fullName, 
+                    idCardNumber: relData.idCardNumber, 
+                    idCardExpiry: relData.idCardExpiry, 
+                    idCardImageUrl: relData.idCardImageUrl, 
+                    forceDiscount: false 
+                });
                 renderCart();
             }
         }
@@ -535,16 +771,17 @@ function setupEventListeners() {
                 document.getElementById('wp-visit-date').value = booking.visitDate.split('T')[0];
                 document.getElementById('wp-emp-enter').checked = booking.isEmployeeEntering;
                 
-                checkUrgentDate(); // 💡 โหลดฟอร์มตรวจความด่วนให้ด้วย
+                checkUrgentDate(); 
                 if (booking.isUrgent && booking.urgentReason) {
-                    document.getElementById('wp-urgent-reason').value = booking.urgentReason;
+                    const reasonInput = document.getElementById('wp-urgent-reason');
+                    if(reasonInput) reasonInput.value = booking.urgentReason;
                 }
 
                 WPState.cart = booking.guests.map(g => ({
                     fullName: g.fullName,
                     idCardNumber: g.idCardNumber,
                     idCardExpiry: g.idCardExpiry,
-                    idCardImageUrl: g.idCardImageUrl,
+                    idCardImageUrl: g.idCardImageUrl, 
                     forceDiscount: g.ticketType === '50_DISCOUNT' 
                 }));
                 
@@ -562,64 +799,62 @@ function setupEventListeners() {
         }
     });
 
-    async function handleAddFreeformGuest(isDiscount) {
+    function handleAddFreeformGuest(isDiscount) {
         const btnId = isDiscount ? 'wp-btn-add-guest-discount' : 'wp-btn-add-guest';
         const btn = document.getElementById(btnId);
-        if (!btn || btn.dataset.isProcessing === 'true') return;
         
         const nameInput = document.getElementById('wp-guest-name').value.trim();
         const idCardNoInput = document.getElementById('wp-guest-idcard-no').value.trim();
         const idCardExpInput = document.getElementById('wp-guest-idcard-expiry').value;
-        const fileInput = document.getElementById('wp-guest-idcard').files[0];
+        const fileInput = document.getElementById('wp-guest-idcard');
+        const file = fileInput.files[0];
         
-        if (!nameInput || !idCardNoInput || !idCardExpInput || !fileInput) return showNotification('กรุณากรอกชื่อ, เลขบัตร, วันหมดอายุ และแนบรูปให้ครบถ้วน', 'error');
+        if (!nameInput || !idCardNoInput || !idCardExpInput || !file) return showNotification('กรุณากรอกข้อมูลและแนบรูปให้ครบถ้วน', 'error');
         if (idCardNoInput.length !== 13) return showNotification('เลขบัตรต้องมี 13 หลัก', 'error');
         if (WPState.cart.find(c => c.fullName === nameInput)) return showNotification('เพิ่มรายชื่อนี้ไปแล้ว', 'error');
+        if (file.size > 2 * 1024 * 1024) return showNotification('ขนาดไฟล์รูปภาพต้องไม่เกิน 2 MB', 'error');
 
-        if (fileInput.size > 2 * 1024 * 1024) {
-            return showNotification('ขนาดไฟล์รูปภาพต้องไม่เกิน 2 MB', 'error');
-        }
+        let forceDisc = isDiscount;
+        if (btnId === 'wp-btn-add-guest' && btn.dataset.forceDiscount === 'true') forceDisc = true;
 
-        btn.dataset.isProcessing = 'true';
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<div class="w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>';
+        const localUrl = URL.createObjectURL(file);
 
-        try {
-            const formData = new FormData(); formData.append('image', fileInput);
-            const uploadRes = await apiCall('/api/upload', 'POST', formData);
-            let forceDisc = isDiscount;
-            if (btnId === 'wp-btn-add-guest' && btn.dataset.forceDiscount === 'true') forceDisc = true;
+        WPState.cart.push({ 
+            fullName: nameInput, 
+            idCardNumber: idCardNoInput, 
+            idCardExpiry: idCardExpInput, 
+            file: file, // เก็บไฟล์เพื่อรออัปโหลดรวดเดียว
+            localUrl: localUrl,
+            forceDiscount: forceDisc 
+        });
+        
+        document.getElementById('wp-guest-name').value = '';
+        document.getElementById('wp-guest-idcard-no').value = '';
+        document.getElementById('wp-guest-idcard-expiry').value = '';
+        fileInput.value = '';
+        document.getElementById('wp-guest-scan-btn').classList.add('hidden'); // ซ่อนปุ่มสแกน
+        
+        freeformSection.classList.add('hidden');
+        toggleContainer.classList.remove('hidden');
 
-            WPState.cart.push({ fullName: nameInput, idCardNumber: idCardNoInput, idCardExpiry: idCardExpInput, idCardImageUrl: uploadRes.imageUrl, forceDiscount: forceDisc });
-            
-            document.getElementById('wp-guest-name').value = '';
-            document.getElementById('wp-guest-idcard-no').value = '';
-            document.getElementById('wp-guest-idcard-expiry').value = '';
-            document.getElementById('wp-guest-idcard').value = '';
-            
-            freeformSection.classList.add('hidden');
-            toggleContainer.classList.remove('hidden');
-
-            renderCart();
-        } catch(err) { showNotification(err.message, 'error'); } 
-        finally { btn.innerHTML = originalHtml; btn.dataset.isProcessing = 'false'; }
+        renderCart();
     }
 
     document.getElementById('wp-btn-add-guest')?.addEventListener('click', () => handleAddFreeformGuest(false));
     document.getElementById('wp-btn-add-guest-discount')?.addEventListener('click', () => handleAddFreeformGuest(true));
 
+    // ยืนยันการจองสิทธิ์ (อัปโหลดรูปรวดเดียว)
     document.getElementById('wp-btn-submit')?.addEventListener('click', async (e) => {
         const btn = e.target;
         if (btn.disabled || btn.dataset.isProcessing === 'true') return;
         
         const visitDate = document.getElementById('wp-visit-date').value;
         const isEmployeeEntering = document.getElementById('wp-emp-enter').checked;
-        const urgentReason = document.getElementById('wp-urgent-reason')?.value || ''; // 💡 ดึงเหตุผลจองด่วน
+        const urgentReason = document.getElementById('wp-urgent-reason')?.value || ''; 
 
         if (!visitDate) return showNotification('กรุณาเลือกวันที่เข้าใช้บริการ', 'error');
         if (!isEmployeeEntering && WPState.cart.length === 0) return showNotification('กรุณาเพิ่มพนักงาน หรือ ผู้ติดตาม อย่างน้อย 1 คน', 'error');
 
-        // 💡 เช็คก่อนส่งว่าถ้าด่วนแล้วกรอกเหตุผลหรือยัง
         const vDate = new Date(visitDate); vDate.setHours(0,0,0,0);
         const tDate = new Date(); tDate.setHours(0,0,0,0);
         if (vDate < tDate) return showNotification('ไม่สามารถทำรายการจองย้อนหลังได้', 'error');
@@ -632,6 +867,19 @@ function setupEventListeners() {
         showLoadingButton(btn, true);
 
         try {
+            // อัปโหลดรูปเฉพาะอันที่เพิ่มเข้ามาใหม่ (มีไฟล์)
+            for (let guest of WPState.cart) {
+                if (guest.file) {
+                    const formData = new FormData(); 
+                    formData.append('image', guest.file);
+                    const uploadRes = await apiCall('/api/upload', 'POST', formData);
+                    guest.idCardImageUrl = uploadRes.imageUrl;
+                    
+                    delete guest.file;
+                    delete guest.localUrl;
+                }
+            }
+
             if (WPState.editingBookingId) {
                 await apiCall(`/api/waterpark/book/${WPState.editingBookingId}`, 'PUT', { username: currentUser.username, visitDate, isEmployeeEntering, guests: WPState.cart, urgentReason });
                 showNotification('แก้ไขคำขอเข้าสวนน้ำสำเร็จ รอการอนุมัติ');
@@ -641,24 +889,24 @@ function setupEventListeners() {
                 submitBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยืนยันการจองสิทธิ์';
                 submitBtn.classList.add('bg-cyan-600', 'hover:bg-cyan-700', 'shadow-cyan-200');
                 submitBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600', 'shadow-amber-200');
-                
-                document.getElementById('urgent-reason-container').classList.add('hidden');
-                document.getElementById('wp-urgent-reason').value = '';
             } else {
                 await apiCall('/api/waterpark/book', 'POST', { username: currentUser.username, visitDate, isEmployeeEntering, guests: WPState.cart, urgentReason });
                 showNotification('จองสิทธิ์เข้าสวนน้ำสำเร็จ รอการอนุมัติ');
-                
-                const d = new Date(); d.setDate(d.getDate() + 3);
-                document.getElementById('wp-visit-date').value = d.toISOString().split('T')[0];
-                document.getElementById('urgent-reason-container').classList.add('hidden');
-                document.getElementById('wp-urgent-reason').value = '';
             }
             
+            const d = new Date(); d.setDate(d.getDate() + 3);
+            document.getElementById('wp-visit-date').value = d.toISOString().split('T')[0];
+            const uContainer = document.getElementById('urgent-reason-container');
+            if(uContainer) uContainer.classList.add('hidden');
+            const uInput = document.getElementById('wp-urgent-reason');
+            if (uInput) uInput.value = '';
+
             WPState.cart = [];
             renderCart();
             loadWaterparkDashboard();
-        } catch(err) { showNotification(err.message, 'error'); } 
-        finally {
+        } catch(err) { 
+            showNotification(err.message, 'error'); 
+        } finally {
             showLoadingButton(btn, false, '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยืนยันการจองสิทธิ์');
             btn.dataset.isProcessing = 'false';
         }
@@ -704,6 +952,102 @@ window.closeImageModal = function() {
         modal.classList.add('hidden');
         target.src = '';
     }, 300);
+}
+
+// Parse ID card data from OCR text using Tesseract
+async function scanThaiIDCard(fileInputId, prefix) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput.files[0];
+    const btn = document.getElementById(`${prefix}scan-btn`);
+    
+    if (!file) return showNotification('กรุณาเลือกรูปภาพก่อนสแกน', 'error');
+
+    btn.dataset.isProcessing = 'true';
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> กำลังอ่าน...';
+    btn.disabled = true;
+
+    try {
+        if (typeof Tesseract === 'undefined') {
+            throw new Error('ระบบ OCR ยังไม่พร้อมใช้งาน กรุณาลองใหม่');
+        }
+
+        const worker = await Tesseract.createWorker('tha+eng');
+        const ret = await worker.recognize(file);
+        const text = ret.data.text;
+        await worker.terminate();
+
+        // 1. Regex หาเลข 13 หลัก
+        const cleanText = text.replace(/-/g, '').replace(/ /g, '');
+        const idMatch = cleanText.match(/\d{13}/);
+        if (idMatch) {
+            document.getElementById(`${prefix}idcard-no`).value = idMatch[0];
+        }
+
+        // 2. Regex หาชื่อ-สกุล (ปรับให้จับคำนำหน้า นาย/นาง/นางสาว จะแม่นกว่าจับคำว่า "ชื่อตัว")
+        const nameRegex = /(นาย|นาง|นางสาว|ด\.ช\.|ด\.ญ\.)\s*([ก-๙]+)\s+([ก-๙]+)/;
+        const nameMatch = text.match(nameRegex);
+        if (nameMatch) {
+            document.getElementById(`${prefix}name`).value = `${nameMatch[1]}${nameMatch[2]} ${nameMatch[3]}`;
+        } else {
+            // Fallback หาบรรทัดถัดจากคำว่า Name หรือ ชื่อ
+            const altNameMatch = text.match(/(?:ชื่อ|Name)[^\n]*\n\s*([ก-๙a-zA-Z\s]+)/i);
+            if (altNameMatch && altNameMatch[1]) {
+                document.getElementById(`${prefix}name`).value = altNameMatch[1].trim();
+            }
+        }
+
+        // 3. Regex หาวันหมดอายุ (ปรับให้ยืดหยุ่นเรื่องช่องว่างและจุดที่ OCR มักอ่านพลาด)
+        const dateRegex = /(\d{1,2})\s*([ก-๙a-zA-Z\.\s]+?)\s*((?:25|20)\d{2})/g;
+        let dates = [];
+        let match;
+        while ((match = dateRegex.exec(text)) !== null) {
+            dates.push({
+                day: match[1].trim(),
+                monthRaw: match[2].trim(),
+                year: parseInt(match[3])
+            });
+        }
+
+        if (dates.length > 0) {
+            // สมมติฐาน: วันหมดอายุ มักจะเป็นปีที่มากที่สุดในบัตร
+            dates.sort((a, b) => b.year - a.year);
+            let expDate = dates[0];
+
+            const parseMonth = (m) => {
+                const cleanM = m.replace(/[\.\s]/g, '').toLowerCase();
+                const monthMap = {
+                    'มค': '01', 'กพ': '02', 'มีค': '03', 'เมย': '04', 'พค': '05', 'มิย': '06',
+                    'กค': '07', 'สค': '08', 'กย': '09', 'ตค': '10', 'พย': '11', 'ธค': '12',
+                    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+                    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+                };
+                // ค้นหาว่ามีตัวย่อเดือนซ่อนอยู่ในข้อความที่อ่านมาได้หรือไม่ (กันกรณีมีตัวอักษรอื่นปน)
+                for (const key in monthMap) {
+                    if (cleanM.includes(key)) return monthMap[key];
+                }
+                return '01'; // Default เดือน 1 ถ้าหาไม่เจอจริงๆ
+            };
+
+            let yyyy = expDate.year;
+            if (yyyy >= 2500) yyyy -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+            
+            let mm = parseMonth(expDate.monthRaw);
+            let dd = expDate.day.padStart(2, '0');
+
+            const formattedDate = `${yyyy}-${mm}-${dd}`;
+            const expiryInput = document.getElementById(`${prefix}idcard-expiry`);
+            if(expiryInput) expiryInput.value = formattedDate;
+        }
+
+        showNotification('ดึงข้อมูลสำเร็จ กรุณาตรวจสอบและแก้ไขให้ถูกต้องอีกครั้ง', 'success');
+    } catch (e) {
+        showNotification('สแกนไม่สำเร็จ กรุณากรอกข้อมูลเอง', 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.dataset.isProcessing = 'false';
+    }
 }
 
 function showNotification(msg, type='success') { 
