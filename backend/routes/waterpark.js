@@ -13,8 +13,21 @@ const path = require('path');
 const fs = require('fs');     
 const jwt = require('jsonwebtoken'); 
 
+// 💡 ท่าไม้ตายสูงสุด: แฮก (Monkey-patch) ระบบ DNS ของ Node.js ให้คืนค่าเฉพาะ IPv4 เท่านั้น
+// เพื่อบังคับไม่ให้มันไปใช้ Local (:::0) ที่เป็น IPv6 บนระบบของ Render
 const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
+const originalLookup = dns.lookup;
+dns.lookup = function(hostname, options, callback) {
+    if (typeof options === 'function') {
+        callback = options;
+        options = { family: 4 };
+    } else if (typeof options === 'object') {
+        options.family = 4;
+    } else {
+        options = { family: 4 };
+    }
+    return originalLookup(hostname, options, callback);
+};
 
 const tierMaxFree = {
     'Tier1_Staff': 4,
@@ -22,7 +35,7 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 อัปเดตล่าสุด: ใช้ Port 587 + STARTTLS + เพิ่มเวลา Timeout
+// 💡 ระบบส่งอีเมล (จะถูกบังคับให้วิ่งผ่าน IPv4 อัตโนมัติจากโค้ดด้านบน)
 const createTransporter = () => {
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
@@ -36,7 +49,6 @@ const createTransporter = () => {
         tls: {
             rejectUnauthorized: false
         },
-        family: 4,
         connectionTimeout: 20000,
         greetingTimeout: 20000,
         socketTimeout: 20000
