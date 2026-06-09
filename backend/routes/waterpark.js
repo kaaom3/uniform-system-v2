@@ -13,7 +13,6 @@ const path = require('path');
 const fs = require('fs');     
 const jwt = require('jsonwebtoken'); 
 
-// 💡 1. พระเอกของงานนี้: บังคับให้ Node.js หาที่อยู่ IP เป็นแบบ IPv4 เท่านั้น (แก้ปัญหา ENETUNREACH บน Render 100%)
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -23,19 +22,24 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 2. ใช้ Transporter แบบเจาะจง Port 465 (SSL) เพื่อป้องกันการถูก Firewall บล็อก
+// 💡 อัปเดตล่าสุด: ใช้ Port 587 + STARTTLS + เพิ่มเวลา Timeout
 const createTransporter = () => {
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false,
+        requireTLS: true,
         auth: { 
             user: process.env.EMAIL_USER, 
             pass: process.env.EMAIL_PASS 
         },
         tls: {
             rejectUnauthorized: false
-        }
+        },
+        family: 4,
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 20000
     });
 };
 
@@ -292,6 +296,7 @@ router.post('/book', async (req, res) => {
         });
 
         await booking.save();
+        try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
@@ -544,7 +549,7 @@ router.put('/book/:id', async (req, res) => {
                                     <ul style="line-height: 1.8;">
                                         <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
                                         <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
-                                        ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
+                                        ${isUrgent ? `<li><b>เหตุจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
                                         <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
                                     </ul>
                                     
