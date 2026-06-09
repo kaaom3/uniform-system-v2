@@ -95,20 +95,14 @@ router.get('/dashboard/:username', async (req, res) => {
         if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้งาน' });
 
         const tier = user.positionLevel || 'Tier1_Staff';
-        const maxFree = tierMaxFree[tier];
+        const maxFree = tierMaxFree[tier] || 0;
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
         const todayForLock = new Date();
         todayForLock.setHours(0,0,0,0);
-        const activeFutureBookings = await WaterparkBooking.find({
-            username: user.username,
-            visitDate: { $gte: todayForLock },
-            status: { $in: ['Pending_Head', 'Pending_HR', 'Approved'] }
-        });
-        const isFreeQuotaLocked = activeFutureBookings.length > 0;
-
+        
         const bookingsThisMonth = await WaterparkBooking.find({ 
             username: user.username, 
             visitDate: { $gte: startOfMonth, $lte: endOfMonth },
@@ -117,6 +111,10 @@ router.get('/dashboard/:username', async (req, res) => {
 
         let freeUsed = 0;
         bookingsThisMonth.forEach(b => freeUsed += b.totalFreeGuestsUsed);
+
+        // 💡 ปลดล็อค: ให้จองเพิ่มได้หากสิทธิ์ยังเหลือ (ไม่ล็อคเพียงเพราะมีรายการที่ยังไม่ไปใช้)
+        const freeRemaining = Math.max(0, maxFree - freeUsed);
+        const isFreeQuotaLocked = freeRemaining <= 0;
 
         let relatives = [];
         if (tier === 'Tier1_Staff') {
@@ -127,7 +125,7 @@ router.get('/dashboard/:username', async (req, res) => {
 
         res.json({
             tier, maxFree, freeUsed,
-            freeRemaining: Math.max(0, maxFree - freeUsed),
+            freeRemaining,
             isFreeQuotaLocked,
             relatives,
             regUnlocked: user.waterparkRegUnlocked,
@@ -193,7 +191,7 @@ router.post('/book', async (req, res) => {
         if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้งาน' });
 
         const tier = user.positionLevel || 'Tier1_Staff';
-        const maxFree = tierMaxFree[tier];
+        const maxFree = tierMaxFree[tier] || 0;
 
         const startOfMonth = new Date(visit.getFullYear(), visit.getMonth(), 1);
         const endOfMonth = new Date(visit.getFullYear(), visit.getMonth() + 1, 0, 23, 59, 59);
@@ -212,6 +210,12 @@ router.post('/book', async (req, res) => {
         let processedGuests = [];
         let totalFreeGuestsUsed = 0;
         let totalDiscountGuestsUsed = 0;
+
+        // 💡 พนักงานที่ขอเข้าเองก็นับเป็น 1 สิทธิ์ฟรี (ถ้ามีสิทธิ์เหลือ)
+        if (isEmployeeEntering && freeSpotsLeft > 0) {
+            totalFreeGuestsUsed = 1;
+            freeSpotsLeft--;
+        }
 
         for (const guest of guests) {
             let ticketType = '50_DISCOUNT';
@@ -375,7 +379,7 @@ router.put('/book/:id', async (req, res) => {
         if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้งาน' });
 
         const tier = user.positionLevel || 'Tier1_Staff';
-        const maxFree = tierMaxFree[tier];
+        const maxFree = tierMaxFree[tier] || 0;
 
         const startOfMonth = new Date(visit.getFullYear(), visit.getMonth(), 1);
         const endOfMonth = new Date(visit.getFullYear(), visit.getMonth() + 1, 0, 23, 59, 59);
@@ -395,6 +399,12 @@ router.put('/book/:id', async (req, res) => {
         let processedGuests = [];
         let totalFreeGuestsUsed = 0;
         let totalDiscountGuestsUsed = 0;
+
+        // 💡 พนักงานที่ขอเข้าเองก็นับเป็น 1 สิทธิ์ฟรี (ถ้ามีสิทธิ์เหลือ)
+        if (isEmployeeEntering && freeSpotsLeft > 0) {
+            totalFreeGuestsUsed = 1;
+            freeSpotsLeft--;
+        }
 
         for (const guest of guests) {
             let ticketType = '50_DISCOUNT';
