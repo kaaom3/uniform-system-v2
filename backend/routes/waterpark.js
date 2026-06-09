@@ -108,7 +108,6 @@ router.get('/dashboard/:username', async (req, res) => {
 
         let freeUsed = 0;
         bookingsThisMonth.forEach(b => {
-            // 💡 แก้บัค NaN: เช็คก่อนว่ามีฟิลด์ totalFreeGuestsUsed หรือไม่ ถ้าไม่มีให้นับจากแขก (รองรับข้อมูลเก่า)
             let count = 0;
             if (typeof b.totalFreeGuestsUsed === 'number') {
                 count = b.totalFreeGuestsUsed;
@@ -209,7 +208,6 @@ router.post('/book', async (req, res) => {
 
         let freeUsedThisMonth = 0;
         bookingsThisMonth.forEach(b => {
-            // 💡 แก้บัค NaN
             let count = 0;
             if (typeof b.totalFreeGuestsUsed === 'number') {
                 count = b.totalFreeGuestsUsed;
@@ -224,9 +222,6 @@ router.post('/book', async (req, res) => {
         let processedGuests = [];
         let totalFreeGuestsUsed = 0;
         let totalDiscountGuestsUsed = 0;
-
-        // 💡 ยกเลิกการหักโควต้าญาติกรณีพนักงานเข้าด้วยกัน พนักงานต้องเข้าฟรีตลอดไม่นับเป็นโควต้า
-        // ลบเงื่อนไข if (isEmployeeEntering && freeSpotsLeft > 0) ออกไป
 
         for (const guest of guests) {
             let ticketType = '50_DISCOUNT';
@@ -263,7 +258,8 @@ router.post('/book', async (req, res) => {
 
         const bookingId = 'WP-' + Math.random().toString(36).substr(2, 8).toUpperCase();
         const booking = new WaterparkBooking({
-            bookingId, username, visitDate, isEmployeeEntering, guests: processedGuests,
+            bookingId, username, employeeName: user.name, department: user.department || '-',
+            visitDate, isEmployeeEntering, guests: processedGuests,
             totalFreeGuestsUsed, totalDiscountGuestsUsed,
             isUrgent, urgentReason, 
             status: initialStatus,
@@ -277,83 +273,87 @@ router.post('/book', async (req, res) => {
 
         await booking.save();
 
-        if (initialStatus === 'Pending_Head' && process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-            });
+        if (initialStatus === 'Pending_Head') {
+            if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+                });
 
-            const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-            
-            let guestsTableHtml = '';
-            if (processedGuests.length > 0) {
-                guestsTableHtml = `
-                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
-                        <thead>
-                            <tr style="background-color: #f1f5f9; text-align: left;">
-                                <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
-                                <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${processedGuests.map(g => `
-                                <tr>
-                                    <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
-                                    <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-            } else {
-                guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
-            }
-            
-            for (let hu of headUsers) {
-                const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
-                const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-                const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+                let guestsTableHtml = '';
+                if (processedGuests.length > 0) {
+                    guestsTableHtml = `
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
+                            <thead>
+                                <tr style="background-color: #f1f5f9; text-align: left;">
+                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
+                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${processedGuests.map(g => `
+                                    <tr>
+                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
+                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } else {
+                    guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
+                }
+                
+                for (let hu of headUsers) {
+                    const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                    
+                    const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+                    const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-                const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
-                const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
+                    const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
+                    const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
 
-                const mailOptions = {
-                    from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-                    to: targetEmail,
-                    subject: `[รออนุมัติ] คำขอเข้าสวนน้ำจาก ${user.name} (${bookingId})`,
-                    html: `
-                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                            <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
-                                <h2 style="margin: 0;">คำขออนุมัติเข้าสวนน้ำ</h2>
-                            </div>
-                            <div style="padding: 20px;">
-                                <p>เรียน คุณ${hu.name},</p>
-                                <p>มีการส่งคำขอจองสิทธิ์เข้าใช้บริการสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
-                                <ul style="line-height: 1.8;">
-                                    <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
-                                    <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
-                                    ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
-                                    <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
-                                </ul>
-                                
-                                <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตาม</h3>
-                                ${guestsTableHtml}
+                    const mailOptions = {
+                        from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                        to: targetEmail,
+                        subject: `[รออนุมัติ] คำขอเข้าสวนน้ำจาก ${user.name} (${bookingId})`,
+                        html: `
+                            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                                <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
+                                    <h2 style="margin: 0;">คำขออนุมัติเข้าสวนน้ำ</h2>
+                                </div>
+                                <div style="padding: 20px;">
+                                    <p>เรียน คุณ${hu.name},</p>
+                                    <p>มีการส่งคำขอจองสิทธิ์เข้าใช้บริการสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
+                                    <ul style="line-height: 1.8;">
+                                        <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
+                                        <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
+                                        ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
+                                        <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
+                                    </ul>
+                                    
+                                    <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตาม</h3>
+                                    ${guestsTableHtml}
 
-                                <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
-                                <div style="text-align: center; margin-top: 20px;">
-                                    <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
-                                    <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
+                                    <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
+                                    <div style="text-align: center; margin-top: 20px;">
+                                        <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
+                                        <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
+                                    </div>
+                                </div>
+                                <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
+                                    นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
                                 </div>
                             </div>
-                            <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
-                                นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
-                            </div>
-                        </div>
-                    `
-                };
-                
-                transporter.sendMail(mailOptions).catch(console.error);
+                        `
+                    };
+                    
+                    transporter.sendMail(mailOptions).catch(console.error);
+                }
+            } else {
+                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบการตั้งค่า Environment Variables (EMAIL_USER, JWT_SECRET หรือ BACKEND_URL) บนเซิร์ฟเวอร์");
             }
         }
 
@@ -403,7 +403,6 @@ router.put('/book/:id', async (req, res) => {
 
         let freeUsedThisMonth = 0;
         bookingsThisMonth.forEach(b => {
-            // 💡 แก้บัค NaN
             let count = 0;
             if (typeof b.totalFreeGuestsUsed === 'number') {
                 count = b.totalFreeGuestsUsed;
@@ -761,7 +760,6 @@ router.put('/admin/remove-guest/:id', async (req, res) => {
             }
         }
         
-        // 💡 ใช้วิธีป้องกันค่าติดลบ หรือค่า NaN ให้ปลอดภัย 100%
         if (removedGuest.ticketType === 'FREE') {
             booking.totalFreeGuestsUsed = Math.max(0, (booking.totalFreeGuestsUsed || 0) - 1);
         } else if (removedGuest.ticketType === '50_DISCOUNT') {
