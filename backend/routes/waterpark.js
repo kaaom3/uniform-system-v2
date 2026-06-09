@@ -275,9 +275,17 @@ router.post('/book', async (req, res) => {
 
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
+                // 💡 แก้ไข 1: เปลี่ยนมาใช้ Port 587 (STARTTLS) สำหรับ Cloud / Render
                 const transporter = nodemailer.createTransport({
-                    service: 'gmail',
-                    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+                    host: 'smtp.gmail.com',
+                    port: 587,
+                    secure: false, // true for 465, false for other ports
+                    requireTLS: true,
+                    auth: { 
+                        user: process.env.EMAIL_USER, 
+                        // ลบช่องว่างเผื่อมีการก๊อปปี้มาผิดใน .env
+                        pass: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.replace(/\s+/g, '') : '' 
+                    }
                 });
 
                 const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -350,7 +358,7 @@ router.post('/book', async (req, res) => {
                         `
                     };
                     
-                    transporter.sendMail(mailOptions).catch(console.error);
+                    transporter.sendMail(mailOptions).catch(err => console.error('[Email Send Error]', err));
                 }
             } else {
                 console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบการตั้งค่า Environment Variables (EMAIL_USER, JWT_SECRET หรือ BACKEND_URL) บนเซิร์ฟเวอร์");
@@ -872,11 +880,15 @@ cron.schedule('0 17 * * 0', async () => {
         });
 
         if (hasValidImages) {
+            // 💡 แก้ไข 2: เปลี่ยนมาใช้ Port 587 (STARTTLS) สำหรับ Cron job สัปดาห์
             const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS
+                host: 'smtp.gmail.com',
+                port: 587,
+                secure: false, 
+                requireTLS: true,
+                auth: { 
+                    user: process.env.EMAIL_USER, 
+                    pass: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.replace(/\s+/g, '') : '' 
                 }
             });
 
@@ -1103,9 +1115,16 @@ cron.schedule('0 8 * * *', async () => {
             doc.on('end', () => resolve(Buffer.concat(buffers)));
         });
 
+        // 💡 แก้ไข 3: เปลี่ยนมาใช้ Port 587 (STARTTLS) สำหรับ Cron job รายวัน
         const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            requireTLS: true,
+            auth: { 
+                user: process.env.EMAIL_USER, 
+                pass: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.replace(/\s+/g, '') : '' 
+            }
         });
 
         await transporter.sendMail({
