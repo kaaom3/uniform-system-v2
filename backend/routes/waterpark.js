@@ -19,7 +19,7 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 ฟังก์ชันสร้างตัวส่งอีเมลแบบล็อกเป้าหมายให้วิ่งผ่าน IPv4 เท่านั้น
+// 💡 ฟังก์ชันสร้างตัวส่งอีเมลบังคับให้วิ่งผ่าน IPv4 เท่านั้น (ลบ localAddress ออกเพื่อแก้ปัญหา bind EINVAL บน Render)
 const createTransporter = () => {
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
@@ -32,8 +32,7 @@ const createTransporter = () => {
         tls: {
             rejectUnauthorized: false
         },
-        family: 4,               // บังคับใช้ IPv4
-        localAddress: '0.0.0.0'  // 💡 ล็อกการส่งข้อมูลออกจากเซิร์ฟเวอร์ด้วย IPv4 เท่านั้น
+        family: 4 // 💡 บังคับใช้ IPv4 เท่านั้น เพื่อแก้ปัญหา ENETUNREACH IPv6
     });
 };
 

@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     injectSuperStockModal(); 
     injectResignModal(); 
     injectImageModal(); 
+    injectReportDateModal(); 
     injectUnifiedUserProfileModal(); 
     setupAdminEventListeners(); 
 });
@@ -187,7 +188,7 @@ function checkAdminSession() {
     if (!storedUser) { window.location.href = 'index.html'; return; }
     const user = JSON.parse(storedUser);
     
-    if (user.role !== 'admin') { window.location.href = 'index.html'; return; }
+    if (user.role !== 'admin' && !user.isHeadApprover) { window.location.href = 'index.html'; return; }
     
     AppState.currentUser = user; 
     document.getElementById('admin-user-name').textContent = user.name;
@@ -214,23 +215,27 @@ function checkAdminSession() {
 
 async function loadAdminData() {
     try {
+        const users = await apiCall('/api/users');
+        onUsersReceived(users);
+
         if (AppState.currentUser.role === 'admin') {
-            const [pendingReqs, users, logs, passwordResets, allReqs, stockData] = await Promise.all([
+            const [pendingReqs, logs, passwordResets, allReqs, stockData] = await Promise.all([
                 apiCall('/api/admin/pending-approvals'), 
-                apiCall('/api/users'), 
                 apiCall('/api/logs'), 
                 apiCall('/api/admin/password-resets'), 
                 apiCall('/api/requests/all'), 
                 apiCall('/api/stock')
             ]);
+            
+            // 💡 แก้ไข: ต้องโหลดข้อมูล Stock เข้าเครื่องก่อนสร้างการ์ด Approvals ไม่งั้นยอดจะเป็น 0
+            onStockReceived(stockData); 
             displayPendingApprovals(pendingReqs); 
-            onUsersReceived(users); 
+            
             onAdminLogReceived(logs); 
             displayPendingPasswordResets(passwordResets);
             
             AppState.allRequestsData = allReqs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             renderAllHistoryTable(); 
-            onStockReceived(stockData); 
             initImportRequestsUI();
         }
         loadWaterparkApprovals();
@@ -251,6 +256,9 @@ function startPollingForUpdates() {
                 const currentRequestIds = AppState.currentPendingRequests.map(req => req.requestId);
                 if (newRequestIds.length !== currentRequestIds.length || newRequestIds.some(id => !currentRequestIds.includes(id))) {
                     showNotification("มีรายการรออนุมัติใหม่!", 'success'); 
+                    // 💡 แก้ไข: ดึงสต๊อกล่าสุดมาก่อนสร้าง Card คำขอใหม่ เพื่อไม่ให้ยอดเป็น 0
+                    const stockData = await apiCall('/api/stock');
+                    onStockReceived(stockData);
                     displayPendingApprovals(newRequests); 
                 }
             }
@@ -307,7 +315,8 @@ function createWaterparkTimeline(status) {
 
 async function loadWaterparkApprovals() {
     try {
-        const data = await apiCall(`/api/waterpark/approvals/pending?username=${AppState.currentUser.username}&role=${AppState.currentUser.role}`);
+        // 💡 ส่ง department และ isHeadApprover ไปให้ Backend คัดกรอง
+        const data = await apiCall(`/api/waterpark/approvals/pending?username=${AppState.currentUser.username}&role=${AppState.currentUser.role}&department=${encodeURIComponent(AppState.currentUser.department)}&isHeadApprover=${AppState.currentUser.isHeadApprover}`);
         const container = document.getElementById('wp-pending-approvals-list'); 
         if (!container) return; 
         
@@ -346,12 +355,12 @@ async function loadWaterparkApprovals() {
             const hasExpired = req.guests.some(g => g.isExpired);
             const urgentBadge = req.isUrgent ? `<span class="px-2 py-0.5 text-[9px] font-bold rounded-lg bg-red-100 text-red-700 border border-red-200 shadow-sm animate-pulse whitespace-nowrap ml-2">[ด่วนพิเศษ]</span>` : '';
 
+            // 💡 แก้ไขลอจิกการมองเห็นปุ่มอนุมัติ
             let canApprove = false;
             if (AppState.currentUser.role === 'admin') { 
-                if (req.status === 'Pending_HR') canApprove = true; 
-                if (req.status === 'Pending_Head' && req.headApprover && req.headApprover.split(',').includes(AppState.currentUser.username)) canApprove = true; 
-            } else { 
-                if (req.status === 'Pending_Head' && req.headApprover && req.headApprover.split(',').includes(AppState.currentUser.username)) canApprove = true; 
+                canApprove = true; // Admin จัดการได้ทุกสเต็ป และแก้ไขข้ามสเต็ปได้
+            } else if (req.status === 'Pending_Head' && AppState.currentUser.isHeadApprover && req.department === AppState.currentUser.department) { 
+                canApprove = true; // หัวหน้าแผนกจัดการได้เฉพาะแผนกตัวเองที่อยู่ในสเต็ปแรก
             }
 
             let statusBadge = req.status === 'Pending_Head' ? '<span class="px-2 py-1 text-[10px] font-bold rounded-lg bg-yellow-100 text-yellow-800 border border-yellow-200 whitespace-nowrap">รอหัวหน้า</span>' : '<span class="px-2 py-1 text-[10px] font-bold rounded-lg bg-orange-100 text-orange-800 border border-orange-200 whitespace-nowrap">รอ HR อนุมัติ</span>';
@@ -695,20 +704,37 @@ window.printApprovalAudit = async function(bookingDbId) {
         if (booking.guests.length === 0) { guestsHtml = '<tr><td colspan="4" style="text-align:center;">ไม่มีผู้ติดตาม</td></tr>'; }
 
         let headApproverName = ''; let headApproveDate = ''; let hrApproverName = ''; let hrApproveDate = '';
-        if (booking.approvalHistory) {
+        
+        // 💡 ดึง Users ทั้งหมดหากยังไม่มีใน AppState (กรณีหัวหน้าล็อกอิน) เพื่อใช้แมพชื่อ
+        if (!AppState.allUsersData || AppState.allUsersData.length === 0) {
+            try { AppState.allUsersData = await apiCall('/api/users'); } catch(e) { console.warn("Failed to fetch user data for name mapping"); }
+        }
+
+        // 💡 ปรับให้รองรับทั้งระบบใหม่ (มี approvalHistory) และระบบเก่า (ไม่มีประวัติ)
+        if (booking.approvalHistory && booking.approvalHistory.length > 0) {
             const headLog = booking.approvalHistory.find(h => h.action === 'HEAD_APPROVED');
             if (headLog) {
                 headApproverName = headLog.actor; 
-                const userObj = AppState.allUsersData.find(u => u.username === headLog.actor);
+                const userObj = AppState.allUsersData?.find(u => u.username === headLog.actor);
                 if(userObj) headApproverName = userObj.name;
                 headApproveDate = new Date(headLog.timestamp).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
             }
             const hrLog = booking.approvalHistory.find(h => h.action === 'HR_APPROVED');
             if (hrLog) {
                 hrApproverName = hrLog.actor;
-                const userObj = AppState.allUsersData.find(u => u.username === hrLog.actor);
+                const userObj = AppState.allUsersData?.find(u => u.username === hrLog.actor);
                 if(userObj) hrApproverName = userObj.name;
                 hrApproveDate = new Date(hrLog.timestamp).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+            }
+        } else {
+            // ระบบสำรอง (Fallback) สำหรับใบจองรุ่นเก่าที่ไม่มี History 
+            if (booking.status === 'Approved' || booking.status === 'Pending_HR') {
+                headApproverName = 'หัวหน้าแผนก (ระบบ)';
+                headApproveDate = new Date(booking.updatedAt || booking.createdAt).toLocaleDateString('th-TH');
+            }
+            if (booking.status === 'Approved') {
+                hrApproverName = 'ฝ่ายบุคคล (ระบบ)';
+                hrApproveDate = new Date(booking.updatedAt || booking.createdAt).toLocaleDateString('th-TH');
             }
         }
 
@@ -717,7 +743,7 @@ window.printApprovalAudit = async function(bookingDbId) {
 
         let requesterFullName = booking.username;
         if (booking.bookingType === 'AFFILIATE') { requesterFullName = `${booking.affiliateName} (เครือ ${booking.affiliateCompany})`; } 
-        else { const reqUserObj = AppState.allUsersData.find(u => u.username === booking.username); if(reqUserObj) requesterFullName = reqUserObj.name; }
+        else { const reqUserObj = AppState.allUsersData?.find(u => u.username === booking.username); if(reqUserObj) requesterFullName = reqUserObj.name; }
 
         const printHtml = `
         <!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>ใบอนุมัติเข้าสวนน้ำ - ${booking.bookingId}</title>
@@ -2431,7 +2457,7 @@ function setupAdminEventListeners() {
         const filterTarget = e.target.closest('.stock-filter-btn'); 
         if (filterTarget) handleStockFilter(filterTarget);
         
-        // 💡 3. ตรวจจับการคลิกที่ชื่อ หรือปุ่มดูประวัติต่างๆ เพื่อเปิด Unified Modal
+        // 💡 ตรวจจับการคลิกที่ชื่อ หรือปุ่มดูประวัติต่างๆ เพื่อเปิด Unified Modal
         const profileBtn = e.target.closest('.clickable-username') || 
                            e.target.closest('.clickable-wp-username') || 
                            e.target.closest('.clickable-uniform-username') || 
@@ -2465,7 +2491,14 @@ function setupAdminEventListeners() {
             showLoadingButton(btn, true);
             
             try { 
-                await apiCall('/api/waterpark/approvals/action', 'POST', { bookingId: btn.dataset.id, action: 'APPROVE', adminUser: AppState.currentUser.username, role: AppState.currentUser.role }); 
+                await apiCall('/api/waterpark/approvals/action', 'POST', { 
+                    bookingId: btn.dataset.id, 
+                    action: 'APPROVE', 
+                    adminUser: AppState.currentUser.username, 
+                    role: AppState.currentUser.role,
+                    department: AppState.currentUser.department,
+                    isHeadApprover: AppState.currentUser.isHeadApprover
+                }); 
                 showNotification('อนุมัติสำเร็จ', 'success'); 
                 loadWaterparkApprovals(); 
             } 
@@ -2481,7 +2514,15 @@ function setupAdminEventListeners() {
             showPromptModal("เหตุผลที่ปฏิเสธคำขอเข้าสวนน้ำ:", async (reason) => {
                 showLoadingButton(btn, true);
                 try { 
-                    await apiCall('/api/waterpark/approvals/action', 'POST', { bookingId: btn.dataset.id, action: 'REJECT', reason, adminUser: AppState.currentUser.username, role: AppState.currentUser.role }); 
+                    await apiCall('/api/waterpark/approvals/action', 'POST', { 
+                        bookingId: btn.dataset.id, 
+                        action: 'REJECT', 
+                        reason, 
+                        adminUser: AppState.currentUser.username, 
+                        role: AppState.currentUser.role,
+                        department: AppState.currentUser.department,
+                        isHeadApprover: AppState.currentUser.isHeadApprover
+                    }); 
                     showNotification('ปฏิเสธสำเร็จ', 'success'); 
                     loadWaterparkApprovals(); 
                 } 
