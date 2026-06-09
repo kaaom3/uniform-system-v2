@@ -164,8 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAdminSession(); 
     injectSuperStockModal(); 
     injectResignModal(); 
-    injectImageModal(); 
-    injectReportDateModal(); 
+    injectImageModal();  
     injectUnifiedUserProfileModal(); 
     setupAdminEventListeners(); 
 });
