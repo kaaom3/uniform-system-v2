@@ -13,13 +13,17 @@ const path = require('path');
 const fs = require('fs');     
 const jwt = require('jsonwebtoken'); 
 
+// 💡 1. พระเอกของงานนี้: บังคับให้ Node.js หาที่อยู่ IP เป็นแบบ IPv4 เท่านั้น (แก้ปัญหา ENETUNREACH บน Render 100%)
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const tierMaxFree = {
     'Tier1_Staff': 4,
     'Tier2_Manager': 5,
     'Tier3_Director': 999999 
 };
 
-// 💡 ฟังก์ชันสร้างตัวส่งอีเมลบังคับให้วิ่งผ่าน IPv4 เท่านั้น (ลบ localAddress ออกเพื่อแก้ปัญหา bind EINVAL บน Render)
+// 💡 2. ใช้ Transporter แบบเจาะจง Port 465 (SSL) เพื่อป้องกันการถูก Firewall บล็อก
 const createTransporter = () => {
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
@@ -31,8 +35,7 @@ const createTransporter = () => {
         },
         tls: {
             rejectUnauthorized: false
-        },
-        family: 4 // 💡 บังคับใช้ IPv4 เท่านั้น เพื่อแก้ปัญหา ENETUNREACH IPv6
+        }
     });
 };
 
@@ -289,7 +292,6 @@ router.post('/book', async (req, res) => {
         });
 
         await booking.save();
-        try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
