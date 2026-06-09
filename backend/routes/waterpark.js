@@ -19,20 +19,21 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 ฟังก์ชันสร้างตัวส่งอีเมลแบบเจาะจงสำหรับ Cloud (แก้ปัญหา ENETUNREACH 100%)
+// 💡 ฟังก์ชันสร้างตัวส่งอีเมลแบบล็อกเป้าหมายให้วิ่งผ่าน IPv4 เท่านั้น
 const createTransporter = () => {
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
         port: 465,
-        secure: true, // บังคับใช้ SSL ทำให้ไม่ถูกบล็อกจาก Cloud Firewall
+        secure: true,
         auth: { 
             user: process.env.EMAIL_USER, 
             pass: process.env.EMAIL_PASS 
         },
         tls: {
-            rejectUnauthorized: false // ป้องกันปัญหา Certificate ฝั่งเซิร์ฟเวอร์
+            rejectUnauthorized: false
         },
-        family: 4 // 💡 คำสั่งสำคัญ: บังคับใช้ IPv4 เท่านั้น ป้องกันปัญหา IPv6 บน Render
+        family: 4,               // บังคับใช้ IPv4
+        localAddress: '0.0.0.0'  // 💡 ล็อกการส่งข้อมูลออกจากเซิร์ฟเวอร์ด้วย IPv4 เท่านั้น
     });
 };
 
@@ -291,7 +292,6 @@ router.post('/book', async (req, res) => {
         await booking.save();
         try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
-        // 💡 ส่งอีเมลให้หัวหน้าแผนก (ใช้ createTransporter ที่บังคับ IPv4)
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมลไปหาหัวหน้าแผนก: ${user.department}`);
