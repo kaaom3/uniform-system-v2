@@ -100,9 +100,6 @@ router.get('/dashboard/:username', async (req, res) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        const todayForLock = new Date();
-        todayForLock.setHours(0,0,0,0);
-        
         const bookingsThisMonth = await WaterparkBooking.find({ 
             username: user.username, 
             visitDate: { $gte: startOfMonth, $lte: endOfMonth },
@@ -110,9 +107,17 @@ router.get('/dashboard/:username', async (req, res) => {
         });
 
         let freeUsed = 0;
-        bookingsThisMonth.forEach(b => freeUsed += b.totalFreeGuestsUsed);
+        bookingsThisMonth.forEach(b => {
+            // 💡 แก้บัค NaN: เช็คก่อนว่ามีฟิลด์ totalFreeGuestsUsed หรือไม่ ถ้าไม่มีให้นับจากแขก (รองรับข้อมูลเก่า)
+            let count = 0;
+            if (typeof b.totalFreeGuestsUsed === 'number') {
+                count = b.totalFreeGuestsUsed;
+            } else if (b.guests && Array.isArray(b.guests)) {
+                count = b.guests.filter(g => g.ticketType === 'FREE').length;
+            }
+            freeUsed += count;
+        });
 
-        // 💡 ปลดล็อค: ให้จองเพิ่มได้หากสิทธิ์ยังเหลือ (ไม่ล็อคเพียงเพราะมีรายการที่ยังไม่ไปใช้)
         const freeRemaining = Math.max(0, maxFree - freeUsed);
         const isFreeQuotaLocked = freeRemaining <= 0;
 
@@ -203,7 +208,16 @@ router.post('/book', async (req, res) => {
         });
 
         let freeUsedThisMonth = 0;
-        bookingsThisMonth.forEach(b => freeUsedThisMonth += b.totalFreeGuestsUsed);
+        bookingsThisMonth.forEach(b => {
+            // 💡 แก้บัค NaN
+            let count = 0;
+            if (typeof b.totalFreeGuestsUsed === 'number') {
+                count = b.totalFreeGuestsUsed;
+            } else if (b.guests && Array.isArray(b.guests)) {
+                count = b.guests.filter(g => g.ticketType === 'FREE').length;
+            }
+            freeUsedThisMonth += count;
+        });
         
         let freeSpotsLeft = Math.max(0, maxFree - freeUsedThisMonth);
         
@@ -211,11 +225,8 @@ router.post('/book', async (req, res) => {
         let totalFreeGuestsUsed = 0;
         let totalDiscountGuestsUsed = 0;
 
-        // 💡 พนักงานที่ขอเข้าเองก็นับเป็น 1 สิทธิ์ฟรี (ถ้ามีสิทธิ์เหลือ)
-        if (isEmployeeEntering && freeSpotsLeft > 0) {
-            totalFreeGuestsUsed = 1;
-            freeSpotsLeft--;
-        }
+        // 💡 ยกเลิกการหักโควต้าญาติกรณีพนักงานเข้าด้วยกัน พนักงานต้องเข้าฟรีตลอดไม่นับเป็นโควต้า
+        // ลบเงื่อนไข if (isEmployeeEntering && freeSpotsLeft > 0) ออกไป
 
         for (const guest of guests) {
             let ticketType = '50_DISCOUNT';
@@ -274,7 +285,6 @@ router.post('/book', async (req, res) => {
 
             const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
             
-            // 💡 สร้างตาราง HTML ของผู้ติดตาม
             let guestsTableHtml = '';
             if (processedGuests.length > 0) {
                 guestsTableHtml = `
@@ -392,19 +402,22 @@ router.put('/book/:id', async (req, res) => {
         });
 
         let freeUsedThisMonth = 0;
-        bookingsThisMonth.forEach(b => freeUsedThisMonth += b.totalFreeGuestsUsed);
+        bookingsThisMonth.forEach(b => {
+            // 💡 แก้บัค NaN
+            let count = 0;
+            if (typeof b.totalFreeGuestsUsed === 'number') {
+                count = b.totalFreeGuestsUsed;
+            } else if (b.guests && Array.isArray(b.guests)) {
+                count = b.guests.filter(g => g.ticketType === 'FREE').length;
+            }
+            freeUsedThisMonth += count;
+        });
         
         let freeSpotsLeft = Math.max(0, maxFree - freeUsedThisMonth);
         
         let processedGuests = [];
         let totalFreeGuestsUsed = 0;
         let totalDiscountGuestsUsed = 0;
-
-        // 💡 พนักงานที่ขอเข้าเองก็นับเป็น 1 สิทธิ์ฟรี (ถ้ามีสิทธิ์เหลือ)
-        if (isEmployeeEntering && freeSpotsLeft > 0) {
-            totalFreeGuestsUsed = 1;
-            freeSpotsLeft--;
-        }
 
         for (const guest of guests) {
             let ticketType = '50_DISCOUNT';
@@ -748,10 +761,11 @@ router.put('/admin/remove-guest/:id', async (req, res) => {
             }
         }
         
+        // 💡 ใช้วิธีป้องกันค่าติดลบ หรือค่า NaN ให้ปลอดภัย 100%
         if (removedGuest.ticketType === 'FREE') {
-            booking.totalFreeGuestsUsed = Math.max(0, booking.totalFreeGuestsUsed - 1);
+            booking.totalFreeGuestsUsed = Math.max(0, (booking.totalFreeGuestsUsed || 0) - 1);
         } else if (removedGuest.ticketType === '50_DISCOUNT') {
-            booking.totalDiscountGuestsUsed = Math.max(0, booking.totalDiscountGuestsUsed - 1);
+            booking.totalDiscountGuestsUsed = Math.max(0, (booking.totalDiscountGuestsUsed || 0) - 1);
         }
 
         const guestName = removedGuest.fullName;
