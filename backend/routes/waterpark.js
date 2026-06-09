@@ -19,22 +19,6 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 ฟังก์ชันสร้างตัวส่งอีเมลที่เสถียรที่สุดสำหรับ Cloud (Render)
-const createTransporter = () => {
-    return nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true, // บังคับใช้ SSL ทำให้ไม่ถูกบล็อกจาก Cloud Firewall
-        auth: { 
-            user: process.env.EMAIL_USER, 
-            pass: process.env.EMAIL_PASS 
-        },
-        tls: {
-            rejectUnauthorized: false // ป้องกันปัญหา Certificate ฝั่งเซิร์ฟเวอร์
-        }
-    });
-};
-
 const deleteCloudinaryImage = async (imageUrl) => {
     if (!imageUrl || !imageUrl.includes('cloudinary.com')) return;
     try {
@@ -288,13 +272,14 @@ router.post('/book', async (req, res) => {
         });
 
         await booking.save();
-        try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
-        // 💡 กระบวนการส่งอีเมลแบบรอให้เสร็จ (await Promise.all) ป้องกัน Render ตัดสาย
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
-                console.log(`[Email System] เตรียมส่งอีเมลไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = createTransporter();
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+                });
+
                 const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
                 let guestsTableHtml = '';
@@ -321,8 +306,7 @@ router.post('/book', async (req, res) => {
                     guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
                 }
                 
-                // เก็บ Array ของ Promise เพื่อให้ระบบรอส่งอีเมลจนครบทุกคน
-                const emailPromises = headUsers.map(async (hu) => {
+                for (let hu of headUsers) {
                     const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
                     
                     const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -366,27 +350,15 @@ router.post('/book', async (req, res) => {
                         `
                     };
                     
-                    try {
-                        const info = await transporter.sendMail(mailOptions);
-                        console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} สำเร็จ (${info.messageId})`);
-                    } catch (err) {
-                        console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} ล้มเหลว:`, err.message);
-                    }
-                });
-                
-                // รอให้วนลูปส่งอีเมลทุกคนเสร็จก่อน แล้วค่อยตอบกลับ Frontend
-                await Promise.all(emailPromises);
-
+                    transporter.sendMail(mailOptions).catch(console.error);
+                }
             } else {
-                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบตั้งค่า Environment Variables (EMAIL_USER, JWT_SECRET, BACKEND_URL)");
+                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบการตั้งค่า Environment Variables (EMAIL_USER, JWT_SECRET หรือ BACKEND_URL) บนเซิร์ฟเวอร์");
             }
         }
 
         res.json({ success: true, booking });
-    } catch (err) { 
-        console.error("❌ [API Error] /book:", err);
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/book/:id', async (req, res) => {
@@ -489,94 +461,6 @@ router.put('/book/:id', async (req, res) => {
         booking.approvalHistory.push({ action: 'CREATED', actor: username, note: 'พนักงานแก้ไขคำขอและส่งใหม่' });
 
         await booking.save();
-
-        // 💡 ส่งอีเมลเหมือนกันตอนกดแก้ไขส่งกลับไป
-        if (initialStatus === 'Pending_Head') {
-            if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
-                console.log(`[Email System] เตรียมส่งอีเมล(หลังแก้ไข)ไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = createTransporter();
-                const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-                
-                let guestsTableHtml = '';
-                if (processedGuests.length > 0) {
-                    guestsTableHtml = `
-                        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
-                            <thead>
-                                <tr style="background-color: #f1f5f9; text-align: left;">
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${processedGuests.map(g => `
-                                    <tr>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                } else {
-                    guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
-                }
-                
-                const emailPromises = headUsers.map(async (hu) => {
-                    const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
-                    
-                    const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-                    const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-                    const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
-                    const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
-
-                    const mailOptions = {
-                        from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-                        to: targetEmail,
-                        subject: `[รออนุมัติ] คำขอเข้าสวนน้ำ(ส่งใหม่) จาก ${user.name} (${booking.bookingId})`,
-                        html: `
-                            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                                <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
-                                    <h2 style="margin: 0;">พนักงานได้ส่งคำขอมาใหม่อีกครั้ง</h2>
-                                </div>
-                                <div style="padding: 20px;">
-                                    <p>เรียน คุณ${hu.name},</p>
-                                    <p>มีการแก้ไขและส่งคำขอจองสิทธิ์เข้าสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
-                                    <ul style="line-height: 1.8;">
-                                        <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
-                                        <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
-                                        ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
-                                        <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
-                                    </ul>
-                                    
-                                    <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตามใหม่</h3>
-                                    ${guestsTableHtml}
-
-                                    <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
-                                    <div style="text-align: center; margin-top: 20px;">
-                                        <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
-                                        <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
-                                    </div>
-                                </div>
-                                <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
-                                    นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
-                                </div>
-                            </div>
-                        `
-                    };
-                    
-                    try {
-                        const info = await transporter.sendMail(mailOptions);
-                        console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} สำเร็จ (${info.messageId})`);
-                    } catch (err) {
-                        console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} ล้มเหลว:`, err.message);
-                    }
-                });
-                
-                await Promise.all(emailPromises);
-            }
-        }
-
         res.json({ success: true, booking });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -988,7 +872,13 @@ cron.schedule('0 17 * * 0', async () => {
         });
 
         if (hasValidImages) {
-            const transporter = createTransporter();
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: process.env.EMAIL_USER,
+                    pass: process.env.EMAIL_PASS
+                }
+            });
 
             await transporter.sendMail({
                 from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
@@ -1213,7 +1103,10 @@ cron.schedule('0 8 * * *', async () => {
             doc.on('end', () => resolve(Buffer.concat(buffers)));
         });
 
-        const transporter = createTransporter();
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+        });
 
         await transporter.sendMail({
             from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
