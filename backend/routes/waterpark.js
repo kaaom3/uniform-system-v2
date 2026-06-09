@@ -281,6 +281,7 @@ router.post('/book', async (req, res) => {
                     port: 587,
                     secure: false, // true for 465, false for other ports
                     requireTLS: true,
+                    family: 4, // 💡 บังคับใช้ IPv4 เพื่อป้องกันปัญหา ENETUNREACH บน Render
                     auth: { 
                         user: process.env.EMAIL_USER, 
                         // ลบช่องว่างเผื่อมีการก๊อปปี้มาผิดใน .env
@@ -886,6 +887,7 @@ cron.schedule('0 17 * * 0', async () => {
                 port: 587,
                 secure: false, 
                 requireTLS: true,
+                family: 4, // 💡 บังคับใช้ IPv4 เพื่อป้องกันปัญหา ENETUNREACH บน Render
                 auth: { 
                     user: process.env.EMAIL_USER, 
                     pass: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.replace(/\s+/g, '') : '' 
@@ -1121,6 +1123,7 @@ cron.schedule('0 8 * * *', async () => {
             port: 587,
             secure: false,
             requireTLS: true,
+            family: 4, // 💡 บังคับใช้ IPv4 เพื่อป้องกันปัญหา ENETUNREACH บน Render
             auth: { 
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.replace(/\s+/g, '') : '' 
