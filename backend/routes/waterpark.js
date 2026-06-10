@@ -313,96 +313,107 @@ router.post('/book', async (req, res) => {
         await booking.save();
         try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
+        // 💡 ส่ง response กลับให้หน้าเว็บทำงานต่อไปได้เลยทันที (ไม่ต้องรอส่งอีเมลเสร็จ)
+        res.json({ success: true, booking });
+
+        // 💡 ทำงานเบื้องหลัง: สร้าง Transporter และส่งอีเมล (Background Task)
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมลไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = await createTransporter();
-                const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
-                let guestsTableHtml = '';
-                if (processedGuests.length > 0) {
-                    guestsTableHtml = `
-                        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
-                            <thead>
-                                <tr style="background-color: #f1f5f9; text-align: left;">
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${processedGuests.map(g => `
-                                    <tr>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                } else {
-                    guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
-                }
-                
-                const emailPromises = headUsers.map(async (hu) => {
-                    const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
-                    
-                    const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-                    const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-                    const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
-                    const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
-
-                    const mailOptions = {
-                        from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-                        to: targetEmail,
-                        subject: `[รออนุมัติ] คำขอเข้าสวนน้ำจาก ${user.name} (${bookingId})`,
-                        html: `
-                            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                                <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
-                                    <h2 style="margin: 0;">คำขออนุมัติเข้าสวนน้ำ</h2>
-                                </div>
-                                <div style="padding: 20px;">
-                                    <p>เรียน คุณ${hu.name},</p>
-                                    <p>มีการส่งคำขอจองสิทธิ์เข้าใช้บริการสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
-                                    <ul style="line-height: 1.8;">
-                                        <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
-                                        <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
-                                        ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
-                                        <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
-                                    </ul>
-                                    
-                                    <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตาม</h3>
-                                    ${guestsTableHtml}
-
-                                    <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
-                                    <div style="text-align: center; margin-top: 20px;">
-                                        <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
-                                        <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
-                                    </div>
-                                </div>
-                                <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
-                                    นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
-                                </div>
-                            </div>
-                        `
-                    };
-                    
+                // ใช้ Anonymous Async Function ครอบไว้ให้มันทำงานคู่ขนานไปเอง
+                (async () => {
                     try {
-                        const info = await transporter.sendMail(mailOptions);
-                        console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} สำเร็จ (${info.messageId})`);
+                        const transporter = await createTransporter();
+                        const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+                        
+                        let guestsTableHtml = '';
+                        if (processedGuests.length > 0) {
+                            guestsTableHtml = `
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
+                                    <thead>
+                                        <tr style="background-color: #f1f5f9; text-align: left;">
+                                            <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
+                                            <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${processedGuests.map(g => `
+                                            <tr>
+                                                <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
+                                                <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            `;
+                        } else {
+                            guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
+                        }
+                        
+                        const emailPromises = headUsers.map(async (hu) => {
+                            const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                            
+                            const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+                            const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+                            const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
+                            const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
+
+                            const mailOptions = {
+                                from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                                to: targetEmail,
+                                subject: `[รออนุมัติ] คำขอเข้าสวนน้ำจาก ${user.name} (${bookingId})`,
+                                html: `
+                                    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                                        <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
+                                            <h2 style="margin: 0;">คำขออนุมัติเข้าสวนน้ำ</h2>
+                                        </div>
+                                        <div style="padding: 20px;">
+                                            <p>เรียน คุณ${hu.name},</p>
+                                            <p>มีการส่งคำขอจองสิทธิ์เข้าใช้บริการสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
+                                            <ul style="line-height: 1.8;">
+                                                <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
+                                                <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
+                                                ${isUrgent ? `<li><b>เหตุผลจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
+                                                <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
+                                            </ul>
+                                            
+                                            <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตาม</h3>
+                                            ${guestsTableHtml}
+
+                                            <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
+                                            <div style="text-align: center; margin-top: 20px;">
+                                                <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
+                                                <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
+                                            </div>
+                                        </div>
+                                        <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
+                                            นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
+                                        </div>
+                                    </div>
+                                `
+                            };
+                            
+                            try {
+                                const info = await transporter.sendMail(mailOptions);
+                                console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} สำเร็จ (${info.messageId})`);
+                            } catch (err) {
+                                console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} ล้มเหลว:`, err.message);
+                            }
+                        });
+                        
+                        await Promise.all(emailPromises);
                     } catch (err) {
-                        console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} ล้มเหลว:`, err.message);
+                        console.error(`❌ [Email System] ระบบส่งอีเมลขัดข้อง:`, err.message);
                     }
-                });
-                
-                await Promise.all(emailPromises);
+                })();
 
             } else {
                 console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบตั้งค่า Environment Variables (API Keys)");
             }
         }
 
-        res.json({ success: true, booking });
     } catch (err) { 
         console.error("❌ [API Error] /book:", err);
         res.status(500).json({ error: err.message }); 
@@ -510,94 +521,110 @@ router.put('/book/:id', async (req, res) => {
 
         await booking.save();
 
+        // 💡 ส่ง response กลับให้หน้าเว็บทันที
+        res.json({ success: true, booking });
+
+        // 💡 ทำงานเบื้องหลัง (Background Task) สำหรับส่งอีเมล
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมล(หลังแก้ไข)ไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = await createTransporter();
-                const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
-                let guestsTableHtml = '';
-                if (processedGuests.length > 0) {
-                    guestsTableHtml = `
-                        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
-                            <thead>
-                                <tr style="background-color: #f1f5f9; text-align: left;">
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
-                                    <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${processedGuests.map(g => `
-                                    <tr>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
-                                        <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                } else {
-                    guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
-                }
-                
-                const emailPromises = headUsers.map(async (hu) => {
-                    const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
-                    
-                    const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-                    const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-                    const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
-                    const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
-
-                    const mailOptions = {
-                        from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-                        to: targetEmail,
-                        subject: `[รออนุมัติ] คำขอเข้าสวนน้ำ(ส่งใหม่) จาก ${user.name} (${booking.bookingId})`,
-                        html: `
-                            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                                <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
-                                    <h2 style="margin: 0;">พนักงานได้ส่งคำขอมาใหม่อีกครั้ง</h2>
-                                </div>
-                                <div style="padding: 20px;">
-                                    <p>เรียน คุณ${hu.name},</p>
-                                    <p>มีการแก้ไขและส่งคำขอจองสิทธิ์เข้าสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
-                                    <ul style="line-height: 1.8;">
-                                        <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
-                                        <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
-                                        ${isUrgent ? `<li><b>เหตุจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
-                                        <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
-                                    </ul>
-                                    
-                                    <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตามใหม่</h3>
-                                    ${guestsTableHtml}
-
-                                    <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
-                                    <div style="text-align: center; margin-top: 20px;">
-                                        <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
-                                        <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
-                                    </div>
-                                </div>
-                                <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
-                                    นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
-                                </div>
-                            </div>
-                        `
-                    };
-                    
+                (async () => {
                     try {
-                        const info = await transporter.sendMail(mailOptions);
-                        console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} สำเร็จ (${info.messageId})`);
+                        const transporter = await createTransporter();
+                        const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+                        
+                        let guestsTableHtml = '';
+                        if (processedGuests.length > 0) {
+                            guestsTableHtml = `
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
+                                    <thead>
+                                        <tr style="background-color: #f1f5f9; text-align: left;">
+                                            <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">ชื่อ-สกุล</th>
+                                            <th style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center;">สิทธิ์ที่ได้รับ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${processedGuests.map(g => `
+                                            <tr>
+                                                <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px;">${g.fullName}</td>
+                                                <td style="padding: 10px; border: 1px solid #cbd5e1; font-size: 14px; text-align: center; font-weight: bold; color: ${g.ticketType === 'FREE' ? '#059669' : '#d97706'};">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            `;
+                        } else {
+                            guestsTableHtml = '<p style="color: #64748b; font-size: 14px; font-style: italic;">(ไม่มีผู้ติดตามเพิ่มเติม พนักงานขอเข้าใช้บริการเพียงคนเดียว)</p>';
+                        }
+                        
+                        const emailPromises = headUsers.map(async (hu) => {
+                            const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                            
+                            const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+                            const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+                            const approveLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${approveToken}`;
+                            const rejectLink = `${process.env.BACKEND_URL}/api/waterpark/email-action?token=${rejectToken}`;
+
+                            const mailOptions = {
+                                from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                                to: targetEmail,
+                                subject: `[รออนุมัติ] คำขอเข้าสวนน้ำ(ส่งใหม่) จาก ${user.name} (${booking.bookingId})`,
+                                html: `
+                                    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                                        <div style="background-color: #1e40af; color: white; padding: 20px; text-align: center;">
+                                            <h2 style="margin: 0;">พนักงานได้ส่งคำขอมาใหม่อีกครั้ง</h2>
+                                        </div>
+                                        <div style="padding: 20px;">
+                                            <p>เรียน คุณ${hu.name},</p>
+                                            <p>มีการแก้ไขและส่งคำขอจองสิทธิ์เข้าสวนน้ำ จากพนักงานในแผนกของคุณ:</p>
+                                            <ul style="line-height: 1.8;">
+                                                <li><b>ผู้ขอสิทธิ์:</b> ${user.name}</li>
+                                                <li><b>วันที่เข้าใช้บริการ:</b> ${visitStr} ${isUrgent ? '<b><span style="color:red;">(จองด่วน!)</span></b>' : ''}</li>
+                                                ${isUrgent ? `<li><b>เหตุจองด่วน:</b> <span style="color:red;">${urgentReason}</span></li>` : ''}
+                                                <li><b>จำนวนผู้ติดตาม:</b> ${processedGuests.length} คน (ฟรี ${totalFreeGuestsUsed}, ลด 50% ${totalDiscountGuestsUsed})</li>
+                                            </ul>
+                                            
+                                            <h3 style="margin-top: 25px; margin-bottom: 5px; color: #1e40af; border-left: 4px solid #1e40af; padding-left: 8px;">รายชื่อผู้ติดตามใหม่</h3>
+                                            ${guestsTableHtml}
+
+                                            <p style="margin-top: 30px; text-align: center;">คุณสามารถกดอนุมัติหรือปฏิเสธได้ทันทีจากปุ่มด้านล่างนี้</p>
+                                            <div style="text-align: center; margin-top: 20px;">
+                                                <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ อนุมัติคำขอ</a>
+                                                <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">❌ ไม่อนุมัติ</a>
+                                            </div>
+                                        </div>
+                                        <div style="background-color: #f1f5f9; color: #64748b; padding: 15px; text-align: center; font-size: 12px;">
+                                            นี่คืออีเมลอัตโนมัติจากระบบ โปรดอย่าตอบกลับ
+                                        </div>
+                                    </div>
+                                `
+                            };
+                            
+                            try {
+                                const info = await transporter.sendMail(mailOptions);
+                                console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} สำเร็จ (${info.messageId})`);
+                            } catch (err) {
+                                console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} ล้มเหลว:`, err.message);
+                            }
+                        });
+                        
+                        await Promise.all(emailPromises);
                     } catch (err) {
-                        console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} ล้มเหลว:`, err.message);
+                        console.error(`❌ [Email System] ระบบส่งอีเมลขัดข้อง:`, err.message);
                     }
-                });
-                
-                await Promise.all(emailPromises);
+                })();
+
+            } else {
+                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบตั้งค่า Environment Variables (API Keys)");
             }
         }
 
-        res.json({ success: true, booking });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error("❌ [API Error] /book/:id:", err);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 router.post('/admin/affiliate-book', async (req, res) => {
