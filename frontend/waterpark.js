@@ -141,8 +141,8 @@ function renderLatestStatus(bookings) {
             <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><span class="animate-pulse w-2 h-2 bg-indigo-400 rounded-full inline-block"></span> สถานะคำขอล่าสุด</p>
             <div class="flex justify-between items-center relative z-10">
                 <div>
-                    <p class="text-sm font-bold text-slate-800">เข้าสวนน้ำวันที่: <span class="text-cyan-300">${d}</span></p>
-                    <p class="text-[10px] text-slate-600 mt-1.5">ผู้ติดตาม: <span class="font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">${activeBooking.guests.length}</span> คน | รหัส: ${activeBooking.bookingId}</p>
+                    <p class="text-sm font-bold text-white">เข้าสวนน้ำวันที่: <span class="text-cyan-300">${d}</span></p>
+                    <p class="text-[10px] text-slate-300 mt-1.5">ผู้ติดตาม: <span class="font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">${activeBooking.guests.length}</span> คน | รหัส: ${activeBooking.bookingId}</p>
                 </div>
                 <div>${statusHtml}</div>
             </div>
@@ -220,10 +220,10 @@ function setupUIByTier() {
         document.getElementById('wp-freeform-label').textContent = 'กรอกข้อมูลผู้ติดตาม';
         
         const box = document.getElementById('wp-freeform-box');
-        if(box) box.className = 'p-5 bg-white border border-slate-200 rounded-2xl shadow-inner relative backdrop-blur-sm';
+        if(box) box.className = 'p-5 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-inner relative backdrop-blur-sm';
         
         if(btnFree) {
-            btnFree.className = 'w-full bg-slate-100 border border-slate-300 text-slate-800 hover:bg-white/20 font-bold py-3 px-4 rounded-xl shadow-sm transition-all text-xs flex justify-center items-center gap-1.5';
+            btnFree.className = 'w-full bg-white/10 border border-white/30 text-white hover:bg-white/10 backdrop-blur-xl/20 font-bold py-3 px-4 rounded-xl shadow-sm transition-all text-xs flex justify-center items-center gap-1.5';
             btnFree.dataset.forceDiscount = 'false'; 
         }
         const textLabel = document.getElementById('wp-btn-add-guest-text');
@@ -258,12 +258,12 @@ function renderRelativesList() {
         } else {
             WPState.relatives.forEach(rel => {
                 leftList.innerHTML += `
-                    <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm mb-2 last:mb-0 hover:bg-slate-50 transition-colors">
+                    <div class="flex items-center justify-between p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-sm mb-2 last:mb-0 hover:bg-white/5 transition-colors">
                         <div class="flex items-center gap-3">
-                            <img src="${getImageUrl(rel.idCardImageUrl)}" class="w-10 h-6 object-cover rounded bg-slate-100 border border-slate-300 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
-                            <p class="text-[11px] font-bold text-slate-800">${rel.fullName}</p>
+                            <img src="${getImageUrl(rel.idCardImageUrl)}" class="w-10 h-6 object-cover rounded bg-white/10 border border-white/30 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
+                            <p class="text-[11px] font-bold text-white">${rel.fullName}</p>
                         </div>
-                        <button type="button" class="del-rel-btn text-rose-600 hover:text-slate-800 p-2 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-transparent hover:border-rose-400" data-id="${rel._id}" title="ลบรายชื่อ">
+                        <button type="button" class="del-rel-btn text-rose-600 hover:text-white p-2 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-transparent hover:border-rose-400" data-id="${rel._id}" title="ลบรายชื่อ">
                             <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
@@ -275,26 +275,26 @@ function renderRelativesList() {
     const dropdownSection = document.getElementById('wp-guest-dropdown-section');
     if (!dropdownSection) return;
 
-    let html = `<label class="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-3">เลือกจากรายชื่อที่ลงทะเบียนไว้ <span class="${WPState.isFreeQuotaLocked ? 'text-amber-400' : 'text-emerald-400'} normal-case tracking-normal ml-1">(${WPState.isFreeQuotaLocked ? 'ถูกระงับ จะถูกปัดเป็นลด 50%' : 'ใช้โควต้าฟรี'})</span></label>`;
+    let html = `<label class="block text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-3">เลือกจากรายชื่อที่ลงทะเบียนไว้ <span class="${WPState.isFreeQuotaLocked ? 'text-amber-400' : 'text-emerald-400'} normal-case tracking-normal ml-1">(${WPState.isFreeQuotaLocked ? 'ถูกระงับ จะถูกปัดเป็นลด 50%' : 'ใช้โควต้าฟรี'})</span></label>`;
 
     if (WPState.relatives.length === 0) {
-        html += `<div class="bg-white border border-slate-200 rounded-xl p-4 text-center"><p class="text-xs text-slate-500 font-medium">ยังไม่มีรายชื่อญาติในระบบ (กรุณาติดต่อ HR)</p></div>`;
+        html += `<div class="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4 text-center"><p class="text-xs text-slate-500 font-medium">ยังไม่มีรายชื่อญาติในระบบ (กรุณาติดต่อ HR)</p></div>`;
     } else {
         const unaddedRelatives = WPState.relatives.filter(rel => !WPState.cart.find(c => c.fullName === rel.fullName));
         
         if (unaddedRelatives.length === 0) {
-            html += `<div class="bg-white border border-slate-200 rounded-xl p-4 text-center"><p class="text-[11px] text-slate-500 font-medium">ไม่มีรายชื่อญาติที่สามารถเลือกได้แล้ว</p></div>`;
+            html += `<div class="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4 text-center"><p class="text-[11px] text-slate-500 font-medium">ไม่มีรายชื่อญาติที่สามารถเลือกได้แล้ว</p></div>`;
         } else {
             html += `<div class="space-y-2">`;
             unaddedRelatives.forEach(rel => {
                 html += `
-                    <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 transition-colors">
+                    <div class="flex items-center justify-between p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-sm hover:bg-white/5 transition-colors">
                         <div class="flex items-center gap-3">
-                            <img src="${getImageUrl(rel.idCardImageUrl)}" class="w-10 h-6 object-cover rounded bg-slate-100 border border-slate-300 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
-                            <p class="text-xs font-bold text-slate-800">${rel.fullName}</p>
+                            <img src="${getImageUrl(rel.idCardImageUrl)}" class="w-10 h-6 object-cover rounded bg-white/10 border border-white/30 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
+                            <p class="text-xs font-bold text-white">${rel.fullName}</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button type="button" class="add-rel-cart-btn text-slate-800 bg-primary-50 hover:bg-primary-100 border border-primary-200 hover:border-cyan-400 p-2 rounded-lg shadow-sm transition-all transform hover:-translate-y-0.5" data-id="${rel._id}" title="เพิ่มเข้าตะกร้า">
+                            <button type="button" class="add-rel-cart-btn text-white bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400 p-2 rounded-lg shadow-sm transition-all transform hover:-translate-y-0.5" data-id="${rel._id}" title="เพิ่มเข้าตะกร้า">
                                 <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
                             </button>
                         </div>
@@ -330,15 +330,15 @@ function renderRelativesCart() {
         
         WPState.relativesCart.forEach((item, index) => {
             list.innerHTML += `
-                <div class="flex items-center justify-between p-2 bg-white/60 border border-emerald-200 rounded-lg shadow-sm mb-1.5">
+                <div class="flex items-center justify-between p-2 bg-white/10 backdrop-blur-xl/60 border border-emerald-200 rounded-lg shadow-sm mb-1.5">
                     <div class="flex items-center gap-2">
-                        <img src="${item.localUrl}" class="w-8 h-5 object-cover rounded border border-slate-200">
+                        <img src="${item.localUrl}" class="w-8 h-5 object-cover rounded border border-white/20">
                         <div>
                             <p class="text-[10px] font-bold text-emerald-800 leading-tight">${item.fullName}</p>
                             <p class="text-[9px] font-mono text-emerald-600">${item.idCardNumber}</p>
                         </div>
                     </div>
-                    <button type="button" class="del-rel-cart-btn text-rose-600 hover:text-rose-600 p-1 bg-white rounded transition-colors" data-index="${index}">
+                    <button type="button" class="del-rel-cart-btn text-rose-600 hover:text-rose-600 p-1 bg-white/10 backdrop-blur-xl rounded transition-colors" data-index="${index}">
                         <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
@@ -397,18 +397,18 @@ function renderCart() {
             const imgPreview = guest.localUrl ? guest.localUrl : getImageUrl(guest.idCardImageUrl);
 
             list.innerHTML += `
-                <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm mb-2 last:mb-0 hover:bg-slate-50 transition-colors">
+                <div class="flex items-center justify-between p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-sm mb-2 last:mb-0 hover:bg-white/5 transition-colors">
                     <div class="flex items-center gap-3 w-full pr-2 overflow-hidden">
-                        <img src="${imgPreview}" class="w-10 h-6 object-cover rounded bg-slate-100 border border-slate-300 shrink-0 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกดูรูป">
+                        <img src="${imgPreview}" class="w-10 h-6 object-cover rounded bg-white/10 border border-white/30 shrink-0 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกดูรูป">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between w-full min-w-0 gap-2">
                             <div>
-                                <p class="text-[11px] font-bold text-slate-800 truncate leading-tight">${guest.fullName}</p>
-                                ${guest.idCardNumber ? `<p class="text-[9px] font-mono text-slate-600/70 leading-none mt-1">${guest.idCardNumber}</p>` : ''}
+                                <p class="text-[11px] font-bold text-white truncate leading-tight">${guest.fullName}</p>
+                                ${guest.idCardNumber ? `<p class="text-[9px] font-mono text-slate-300/70 leading-none mt-1">${guest.idCardNumber}</p>` : ''}
                             </div>
                             ${badge}
                         </div>
                     </div>
-                    <button type="button" class="del-cart-btn shrink-0 text-slate-500 hover:text-slate-800 transition-colors p-2 bg-rose-50 hover:bg-rose-100 rounded-lg border border-transparent hover:border-rose-400" data-index="${index}">
+                    <button type="button" class="del-cart-btn shrink-0 text-slate-500 hover:text-white transition-colors p-2 bg-rose-50 hover:bg-rose-100 rounded-lg border border-transparent hover:border-rose-400" data-index="${index}">
                         <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
@@ -436,7 +436,7 @@ function renderHistory(bookings) {
     list.innerHTML = '';
     
     if (bookings.length === 0) {
-        list.innerHTML = '<div class="text-center p-6 bg-white rounded-[2rem] border border-slate-200"><p class="text-slate-500 text-sm font-medium">ยังไม่มีประวัติการจอง</p></div>';
+        list.innerHTML = '<div class="text-center p-6 bg-white/10 backdrop-blur-xl rounded-[2rem] border border-white/20"><p class="text-slate-500 text-sm font-medium">ยังไม่มีประวัติการจอง</p></div>';
         return;
     }
 
@@ -454,7 +454,7 @@ function renderHistory(bookings) {
         else if (b.status === 'Pending_HR') statusHtml = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-orange-100 text-orange-700 border border-orange-200 shadow-sm">รอ HR อนุมัติ</span>';
         else if (b.status === 'Approved') statusHtml = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">อนุมัติเรียบร้อย</span>';
         else if (b.status === 'Rejected') statusHtml = `<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-rose-500/20 text-rose-700 border border-rose-200">ไม่อนุมัติ</span>`;
-        else if (b.status === 'Cancelled') statusHtml = `<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-slate-100 text-slate-600 border border-slate-300">ยกเลิกรายการแล้ว</span>`;
+        else if (b.status === 'Cancelled') statusHtml = `<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-white/10 text-slate-300 border border-white/30">ยกเลิกรายการแล้ว</span>`;
         else if (b.status === 'Returned') statusHtml = `<span class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">ส่งกลับให้แก้ไข</span>`; 
         
         if (isCancelable) {
@@ -462,15 +462,15 @@ function renderHistory(bookings) {
         }
         
         if (b.status === 'Returned') {
-            editBtnHtml = `<button class="edit-wp-btn text-primary-600 hover:text-primary-800 underline font-bold text-[11px] mt-2 text-right block w-full bg-cyan-500/10 py-1.5 rounded-xl border border-cyan-500/20 transition-colors" data-id="${b._id}">[ คลิกเพื่อแก้ไขคำขอใหม่ ]</button>`;
+            editBtnHtml = `<button class="edit-wp-btn text-cyan-400 hover:text-white underline font-bold text-[11px] mt-2 text-right block w-full bg-cyan-500/10 py-1.5 rounded-xl border border-cyan-500/20 transition-colors" data-id="${b._id}">[ คลิกเพื่อแก้ไขคำขอใหม่ ]</button>`;
         }
 
         let guestsHtml = b.guests.map(g => {
             const bClass = g.ticketType === 'FREE' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200';
             const bText = g.ticketType === 'FREE' ? 'ฟรี' : '50%';
             return `<div class="flex justify-between items-center text-xs py-2.5 border-b border-white/5 last:border-0">
-                        <span class="text-slate-700 font-medium truncate pr-2 flex items-center gap-3">
-                            <img src="${getImageUrl(g.idCardImageUrl)}" class="w-10 h-6 object-cover rounded border border-slate-200 shrink-0 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
+                        <span class="text-indigo-100 font-medium truncate pr-2 flex items-center gap-3">
+                            <img src="${getImageUrl(g.idCardImageUrl)}" class="w-10 h-6 object-cover rounded border border-white/20 shrink-0 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
                             ${g.fullName}
                         </span>
                         <span class="text-[9px] font-bold px-2 py-0.5 rounded-md border ${bClass} shrink-0">${bText}</span>
@@ -480,11 +480,11 @@ function renderHistory(bookings) {
         if (b.guests.length === 0) guestsHtml = '<p class="text-[11px] text-slate-500 italic">ไม่มีผู้ติดตาม</p>';
 
         list.innerHTML += `
-            <div class="border border-slate-200 rounded-3xl p-6 bg-white shadow-xl hover:bg-slate-50 transition-colors backdrop-blur-md ${b.status === 'Cancelled' ? 'opacity-60 grayscale-[50%]' : ''}">
+            <div class="border border-white/20 rounded-3xl p-6 bg-white/10 backdrop-blur-xl shadow-xl hover:bg-white/5 transition-colors backdrop-blur-md ${b.status === 'Cancelled' ? 'opacity-60 grayscale-[50%]' : ''}">
                 <div class="flex justify-between items-start mb-4">
                     <div>
                         <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่เข้าใช้บริการ</span>
-                        <p class="font-bold text-slate-800 text-base mt-1">${d} ${urgentBadge}</p>
+                        <p class="font-bold text-white text-base mt-1">${d} ${urgentBadge}</p>
                     </div>
                     <div class="text-right">
                         ${statusHtml}
@@ -496,9 +496,9 @@ function renderHistory(bookings) {
                 ${(b.status === 'Rejected' || b.status === 'Returned') && b.rejectReason ? `<p class="text-[10px] ${b.status === 'Returned' ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-rose-700 bg-rose-50 border-rose-200'} font-bold mb-4 p-3 rounded-xl border shadow-inner">${b.rejectReason}</p>` : ''}
                 <div class="flex gap-2.5 mb-4">
                     <span class="text-[10px] bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold border border-blue-500/30">พนักงานเข้า: ${b.isEmployeeEntering ? 'ใช่' : 'ไม่'}</span>
-                    <span class="text-[10px] bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg font-bold border border-slate-300">ผู้ติดตาม: ${b.guests.length}</span>
+                    <span class="text-[10px] bg-white/10 text-slate-300 px-3 py-1.5 rounded-lg font-bold border border-white/30">ผู้ติดตาม: ${b.guests.length}</span>
                 </div>
-                <div class="bg-slate-100 p-4 rounded-xl border border-white/5 shadow-inner">
+                <div class="bg-white/10 p-4 rounded-xl border border-white/5 shadow-inner">
                     ${guestsHtml}
                 </div>
             </div>
@@ -926,10 +926,10 @@ function injectImageModal() {
     <div id="image-zoom-modal" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center transition-opacity opacity-0 cursor-pointer" onclick="closeImageModal()">
         <div class="relative mx-4 flex flex-col items-center" onclick="event.stopPropagation()">
             <div class="relative">
-                <button class="absolute -top-3 -right-3 bg-slate-800 text-slate-800 rounded-full p-1.5 shadow-lg hover:bg-rose-100 transition-colors z-10 border border-slate-600" onclick="closeImageModal()">
+                <button class="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 shadow-lg hover:bg-rose-100 transition-colors z-10 border border-slate-600" onclick="closeImageModal()">
                     <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
-                <img id="image-zoom-target" src="" class="max-w-[280px] sm:max-w-[350px] max-h-[40vh] object-contain rounded-xl shadow-2xl scale-95 transition-transform duration-300 bg-slate-100">
+                <img id="image-zoom-target" src="" class="max-w-[280px] sm:max-w-[350px] max-h-[40vh] object-contain rounded-xl shadow-2xl scale-95 transition-transform duration-300 bg-white/10">
             </div>
         </div>
     </div>`;
