@@ -13,21 +13,9 @@ const path = require('path');
 const fs = require('fs');     
 const jwt = require('jsonwebtoken'); 
 
-// 💡 ท่าไม้ตายสูงสุด: แฮก (Monkey-patch) ระบบ DNS ของ Node.js ให้คืนค่าเฉพาะ IPv4 เท่านั้น
-// เพื่อบังคับไม่ให้มันไปใช้ Local (:::0) ที่เป็น IPv6 บนระบบของ Render
-const dns = require('dns');
-const originalLookup = dns.lookup;
-dns.lookup = function(hostname, options, callback) {
-    if (typeof options === 'function') {
-        callback = options;
-        options = { family: 4 };
-    } else if (typeof options === 'object') {
-        options.family = 4;
-    } else {
-        options = { family: 4 };
-    }
-    return originalLookup(hostname, options, callback);
-};
+// 💡 1. นำเข้าไลบรารี googleapis สำหรับระบบยืนยันตัวตนใหม่
+const { google } = require('googleapis');
+const OAuth2 = google.auth.OAuth2;
 
 const tierMaxFree = {
     'Tier1_Staff': 4,
@@ -35,23 +23,38 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 ระบบส่งอีเมล (จะถูกบังคับให้วิ่งผ่าน IPv4 อัตโนมัติจากโค้ดด้านบน)
-const createTransporter = () => {
+// 💡 2. ปรับปรุงตัวส่งอีเมลให้ใช้ระบบ OAuth2 (Gmail API) แทนการใช้รหัสผ่านปกติ
+const createTransporter = async () => {
+    const oauth2Client = new OAuth2(
+        process.env.GMAIL_CLIENT_ID,
+        process.env.GMAIL_CLIENT_SECRET,
+        "https://developers.google.com/oauthplayground"
+    );
+
+    oauth2Client.setCredentials({
+        refresh_token: process.env.GMAIL_REFRESH_TOKEN
+    });
+
+    const accessToken = await new Promise((resolve, reject) => {
+        oauth2Client.getAccessToken((err, token) => {
+            if (err) {
+                console.error("❌ [Email System] Failed to create access token:", err);
+                reject('Failed to create access token');
+            }
+            resolve(token);
+        });
+    });
+
     return nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
-        requireTLS: true,
-        auth: { 
-            user: process.env.EMAIL_USER, 
-            pass: process.env.EMAIL_PASS 
-        },
-        tls: {
-            rejectUnauthorized: false
-        },
-        connectionTimeout: 20000,
-        greetingTimeout: 20000,
-        socketTimeout: 20000
+        service: 'gmail',
+        auth: {
+            type: 'OAuth2',
+            user: process.env.EMAIL_USER,
+            accessToken,
+            clientId: process.env.GMAIL_CLIENT_ID,
+            clientSecret: process.env.GMAIL_CLIENT_SECRET,
+            refreshToken: process.env.GMAIL_REFRESH_TOKEN
+        }
     });
 };
 
@@ -311,9 +314,9 @@ router.post('/book', async (req, res) => {
         try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
         if (initialStatus === 'Pending_Head') {
-            if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
+            if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมลไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = createTransporter();
+                const transporter = await createTransporter();
                 const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
                 let guestsTableHtml = '';
@@ -395,7 +398,7 @@ router.post('/book', async (req, res) => {
                 await Promise.all(emailPromises);
 
             } else {
-                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบตั้งค่า Environment Variables");
+                console.warn("⚠️ [Email System] ข้ามการส่งอีเมลขออนุมัติ: ไม่พบตั้งค่า Environment Variables (API Keys)");
             }
         }
 
@@ -508,9 +511,9 @@ router.put('/book/:id', async (req, res) => {
         await booking.save();
 
         if (initialStatus === 'Pending_Head') {
-            if (process.env.EMAIL_USER && process.env.JWT_SECRET && process.env.BACKEND_URL) {
+            if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมล(หลังแก้ไข)ไปหาหัวหน้าแผนก: ${user.department}`);
-                const transporter = createTransporter();
+                const transporter = await createTransporter();
                 const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                 
                 let guestsTableHtml = '';
@@ -927,7 +930,7 @@ cron.schedule('0 17 * * 0', async () => {
     try {
         console.log('[Cron Job] Weekly PDF Report & Cleanup starting (Sunday 17:00)...');
         
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.REPORT_EMAIL_TO) {
+        if (!process.env.EMAIL_USER || !process.env.GMAIL_REFRESH_TOKEN || !process.env.REPORT_EMAIL_TO) {
             console.error('[Cron Job] ไม่ได้ตั้งค่า EMAIL ในระบบ (.env) ข้ามการส่งอีเมล');
             return;
         }
@@ -1004,7 +1007,7 @@ cron.schedule('0 17 * * 0', async () => {
         });
 
         if (hasValidImages) {
-            const transporter = createTransporter();
+            const transporter = await createTransporter();
 
             await transporter.sendMail({
                 from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
@@ -1051,7 +1054,7 @@ cron.schedule('0 8 * * *', async () => {
         
         const targetEmail = process.env.ADMISSIONS_EMAIL_TO || process.env.REPORT_EMAIL_TO;
 
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !targetEmail) {
+        if (!process.env.EMAIL_USER || !process.env.GMAIL_REFRESH_TOKEN || !targetEmail) {
             console.error('[Cron Job] ไม่ได้ตั้งค่า EMAIL ข้ามการส่งอีเมลรายวัน');
             return;
         }
@@ -1229,7 +1232,7 @@ cron.schedule('0 8 * * *', async () => {
             doc.on('end', () => resolve(Buffer.concat(buffers)));
         });
 
-        const transporter = createTransporter();
+        const transporter = await createTransporter();
 
         await transporter.sendMail({
             from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
