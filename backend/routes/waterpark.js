@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');     
 const jwt = require('jsonwebtoken'); 
 
-// 💡 1. นำเข้าไลบรารี googleapis สำหรับระบบยืนยันตัวตนใหม่
+// นำเข้าไลบรารี googleapis
 const { google } = require('googleapis');
 const OAuth2 = google.auth.OAuth2;
 
@@ -23,8 +23,23 @@ const tierMaxFree = {
     'Tier3_Director': 999999 
 };
 
-// 💡 2. ปรับปรุงตัวส่งอีเมลให้ใช้ระบบ OAuth2 (Gmail API) แทนการใช้รหัสผ่านปกติ
-const createTransporter = async () => {
+// 💡 1. ฟังก์ชันช่วยสร้างและแปลงหน้าตาอีเมลเป็น Raw Data (เพื่อให้ API ของ Google อ่านเข้าใจ)
+const getRawMessage = async (mailOptions) => {
+    return new Promise((resolve, reject) => {
+        // ใช้ Nodemailer แบบ Stream (ไม่ได้ส่งออกไปจริงๆ แค่เอามาสร้างโครงสร้างอีเมล)
+        const transporter = nodemailer.createTransport({ streamTransport: true });
+        transporter.sendMail(mailOptions, (err, info) => {
+            if (err) return reject(err);
+            const chunks = [];
+            info.message.on('data', chunk => chunks.push(chunk));
+            info.message.on('end', () => resolve(Buffer.concat(chunks)));
+            info.message.on('error', reject);
+        });
+    });
+};
+
+// 💡 2. พระเอกของงานนี้: ยิงข้อมูลตรงเข้า HTTP API ของ Google แบบไม่ผ่านพอร์ต SMTP
+const sendEmailViaGmailAPI = async (mailOptions) => {
     const oauth2Client = new OAuth2(
         process.env.GMAIL_CLIENT_ID,
         process.env.GMAIL_CLIENT_SECRET,
@@ -35,27 +50,25 @@ const createTransporter = async () => {
         refresh_token: process.env.GMAIL_REFRESH_TOKEN
     });
 
-    const accessToken = await new Promise((resolve, reject) => {
-        oauth2Client.getAccessToken((err, token) => {
-            if (err) {
-                console.error("❌ [Email System] Failed to create access token:", err);
-                reject('Failed to create access token');
-            }
-            resolve(token);
-        });
-    });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    // แปลงอีเมลเป็นรหัสลับแบบ Base64Url
+    const messageBuffer = await getRawMessage(mailOptions);
+    const encodedMessage = messageBuffer
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
 
-    return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            type: 'OAuth2',
-            user: process.env.EMAIL_USER,
-            accessToken,
-            clientId: process.env.GMAIL_CLIENT_ID,
-            clientSecret: process.env.GMAIL_CLIENT_SECRET,
-            refreshToken: process.env.GMAIL_REFRESH_TOKEN
+    // ยิงเข้า API ของ Google โดยตรง (ผ่านพอร์ต 443 ทะลุระบบบล็อกของ Render)
+    const res = await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+            raw: encodedMessage
         }
     });
+    
+    return { messageId: res.data.id };
 };
 
 const deleteCloudinaryImage = async (imageUrl) => {
@@ -313,18 +326,15 @@ router.post('/book', async (req, res) => {
         await booking.save();
         try { sendPushMessage(booking, 'เบิกใหม่'); } catch(e) {}
 
-        // 💡 ส่ง response กลับให้หน้าเว็บทำงานต่อไปได้เลยทันที (ไม่ต้องรอส่งอีเมลเสร็จ)
         res.json({ success: true, booking });
 
-        // 💡 ทำงานเบื้องหลัง: สร้าง Transporter และส่งอีเมล (Background Task)
+        // ทำงานเบื้องหลัง: สร้างและส่งอีเมล (Background Task)
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมลไปหาหัวหน้าแผนก: ${user.department}`);
                 
-                // ใช้ Anonymous Async Function ครอบไว้ให้มันทำงานคู่ขนานไปเอง
                 (async () => {
                     try {
-                        const transporter = await createTransporter();
                         const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                         
                         let guestsTableHtml = '';
@@ -396,7 +406,7 @@ router.post('/book', async (req, res) => {
                             };
                             
                             try {
-                                const info = await transporter.sendMail(mailOptions);
+                                const info = await sendEmailViaGmailAPI(mailOptions);
                                 console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} สำเร็จ (${info.messageId})`);
                             } catch (err) {
                                 console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือนถึง ${targetEmail} ล้มเหลว:`, err.message);
@@ -521,17 +531,14 @@ router.put('/book/:id', async (req, res) => {
 
         await booking.save();
 
-        // 💡 ส่ง response กลับให้หน้าเว็บทันที
         res.json({ success: true, booking });
 
-        // 💡 ทำงานเบื้องหลัง (Background Task) สำหรับส่งอีเมล
         if (initialStatus === 'Pending_Head') {
             if (process.env.EMAIL_USER && process.env.GMAIL_REFRESH_TOKEN && process.env.JWT_SECRET && process.env.BACKEND_URL) {
                 console.log(`[Email System] เตรียมส่งอีเมล(หลังแก้ไข)ไปหาหัวหน้าแผนก: ${user.department}`);
                 
                 (async () => {
                     try {
-                        const transporter = await createTransporter();
                         const visitStr = new Date(visitDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
                         
                         let guestsTableHtml = '';
@@ -603,7 +610,7 @@ router.put('/book/:id', async (req, res) => {
                             };
                             
                             try {
-                                const info = await transporter.sendMail(mailOptions);
+                                const info = await sendEmailViaGmailAPI(mailOptions);
                                 console.log(`✅ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} สำเร็จ (${info.messageId})`);
                             } catch (err) {
                                 console.error(`❌ [Email System] ส่งอีเมลแจ้งเตือน(ส่งใหม่)ถึง ${targetEmail} ล้มเหลว:`, err.message);
@@ -1034,22 +1041,24 @@ cron.schedule('0 17 * * 0', async () => {
         });
 
         if (hasValidImages) {
-            const transporter = await createTransporter();
-
-            await transporter.sendMail({
-                from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-                to: process.env.REPORT_EMAIL_TO,
-                subject: 'รายงานตรวจสอบและลบรูปบุคคลภายนอกสวนน้ำ (อัตโนมัติ)',
-                text: 'นี่คืออีเมลอัตโนมัติจากระบบ\n\nแนบไฟล์รายงาน PDF ประจำสัปดาห์ สำหรับตรวจสอบรูปบัตรประชาชนบุคคลภายนอกที่เข้าใช้งานสวนน้ำ\nระบบได้ทำการส่งรูปและทำการ "ลบรูปออกจากฐานข้อมูล (Cloudinary)" เรียบร้อยแล้วเพื่อความปลอดภัยของข้อมูล (PDPA)',
-                attachments: [
-                    {
-                        filename: `Waterpark_Report_${new Date().toISOString().split('T')[0]}.pdf`,
-                        content: pdfBuffer,
-                        contentType: 'application/pdf'
-                    }
-                ]
-            });
-            console.log('[Cron Job] Weekly report email sent successfully.');
+            try {
+                await sendEmailViaGmailAPI({
+                    from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                    to: process.env.REPORT_EMAIL_TO,
+                    subject: 'รายงานตรวจสอบและลบรูปบุคคลภายนอกสวนน้ำ (อัตโนมัติ)',
+                    text: 'นี่คืออีเมลอัตโนมัติจากระบบ\n\nแนบไฟล์รายงาน PDF ประจำสัปดาห์ สำหรับตรวจสอบรูปบัตรประชาชนบุคคลภายนอกที่เข้าใช้งานสวนน้ำ\nระบบได้ทำการส่งรูปและทำการ "ลบรูปออกจากฐานข้อมูล (Cloudinary)" เรียบร้อยแล้วเพื่อความปลอดภัยของข้อมูล (PDPA)',
+                    attachments: [
+                        {
+                            filename: `Waterpark_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+                            content: pdfBuffer,
+                            contentType: 'application/pdf'
+                        }
+                    ]
+                });
+                console.log('[Cron Job] Weekly report email sent successfully.');
+            } catch (err) {
+                console.error('[Cron Job] Weekly report email failed:', err.message);
+            }
         }
 
         let deletedCount = 0;
@@ -1259,21 +1268,22 @@ cron.schedule('0 8 * * *', async () => {
             doc.on('end', () => resolve(Buffer.concat(buffers)));
         });
 
-        const transporter = await createTransporter();
-
-        await transporter.sendMail({
-            from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
-            to: targetEmail,
-            subject: `[อัตโนมัติ] ใบลงนามรับสิทธิ์เข้าสวนน้ำประจำวัน (${dateStr})`,
-            text: `เรียน แผนก Admissions,\n\nระบบขอส่งไฟล์ "ใบลงนามผู้รับสิทธิ์สวัสดิการเข้าสวนน้ำ" ประจำวันนี้ (${dateStr})\nรูปแบบไฟล์ถูกจัดเตรียมในรูปแบบตาราง (แนวนอน) พร้อมให้สั่งพิมพ์ (Print) ทันทีครับ\n\n(อีเมลฉบับนี้ส่งโดยระบบอัตโนมัติ)`,
-            attachments: [{
-                filename: `Admissions_Signature_Form_${today.toISOString().split('T')[0]}.pdf`,
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }]
-        });
-        
-        console.log('[Cron Job] Daily Admissions Report email sent successfully.');
+        try {
+            await sendEmailViaGmailAPI({
+                from: `"Uniform & Waterpark System" <${process.env.EMAIL_USER}>`,
+                to: targetEmail,
+                subject: `[อัตโนมัติ] ใบลงนามรับสิทธิ์เข้าสวนน้ำประจำวัน (${dateStr})`,
+                text: `เรียน แผนก Admissions,\n\nระบบขอส่งไฟล์ "ใบลงนามผู้รับสิทธิ์สวัสดิการเข้าสวนน้ำ" ประจำวันนี้ (${dateStr})\nรูปแบบไฟล์ถูกจัดเตรียมในรูปแบบตาราง (แนวนอน) พร้อมให้สั่งพิมพ์ (Print) ทันทีครับ\n\n(อีเมลฉบับนี้ส่งโดยระบบอัตโนมัติ)`,
+                attachments: [{
+                    filename: `Admissions_Signature_Form_${today.toISOString().split('T')[0]}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }]
+            });
+            console.log('[Cron Job] Daily Admissions Report email sent successfully.');
+        } catch (err) {
+            console.error('[Cron Job] Daily Admissions Report email failed:', err.message);
+        }
 
     } catch (error) {
         console.error('[Cron Job] Error during daily admissions report:', error);
