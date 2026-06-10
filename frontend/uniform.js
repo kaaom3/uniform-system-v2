@@ -190,16 +190,22 @@ function displayRequests(requests) {
     if (!requests || requests.length === 0) return tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-4 text-slate-500">ไม่พบข้อมูล</td></tr>`;
 
     requests.forEach(req => {
-        let actionButton = (req.status === 'Approved' && req.quantity > 0) ? `<span class="text-xs text-indigo-500">คืนได้ในฟอร์มซ้ายมือ</span>` : '-';
+        let actionButton = (req.status === 'Approved' && req.quantity > 0) ? `<span class="text-xs text-indigo-400 font-bold">คืนได้ในฟอร์มซ้ายมือ</span>` : '-';
         const safeStatus = (req.status || 'unknown').replace(' ', '-').toLowerCase();
-        const statusMap = {'pending':'bg-yellow-100 text-yellow-800','approved':'bg-emerald-100 text-emerald-800','rejected':'bg-red-100 text-red-800','returned':'bg-indigo-100 text-indigo-800','pending-return':'bg-orange-100 text-orange-800'};
-        const statusClass = statusMap[safeStatus] || 'bg-slate-100 text-slate-800';
+        const statusMap = {
+            'pending':'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+            'approved':'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+            'rejected':'bg-rose-500/20 text-rose-300 border-rose-500/30',
+            'returned':'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+            'pending-return':'bg-orange-500/20 text-orange-300 border-orange-500/30'
+        };
+        const statusClass = statusMap[safeStatus] || 'bg-white/10 text-white border-white/20';
 
-        tableBody.innerHTML += `<tr class="hover:bg-slate-50 transition-colors">
-            <td class="p-4 text-[10px] text-slate-500 whitespace-nowrap">${new Date(req.createdAt).toLocaleString()}</td>
-            <td class="p-4 text-xs font-medium text-slate-800">${req.itemType} <span class="text-slate-500">(ไซส์ ${req.size}) x <span class="font-bold text-indigo-600">${req.quantity}</span></span></td>
-            <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${statusClass}">${req.status}</span></td>
-            <td class="p-4 text-[11px] text-slate-600 truncate max-w-[150px]" title="${req.notes || '-'}">${req.notes || '-'}</td>
+        tableBody.innerHTML += `<tr class="hover:bg-white/10 transition-colors border-b border-white/5 last:border-0">
+            <td class="p-4 text-[10px] text-indigo-200/70 whitespace-nowrap">${new Date(req.createdAt).toLocaleString()}</td>
+            <td class="p-4 text-xs font-medium text-white">${req.itemType} <span class="text-indigo-300/70">(ไซส์ ${req.size}) x <span class="font-bold text-cyan-300">${req.quantity}</span></span></td>
+            <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border shadow-sm ${statusClass}">${req.status}</span></td>
+            <td class="p-4 text-[11px] text-slate-300 truncate max-w-[150px]" title="${req.notes || '-'}">${req.notes || '-'}</td>
             <td class="p-4 text-sm">${actionButton}</td>
         </tr>`;
     });

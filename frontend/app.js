@@ -169,26 +169,19 @@ function renderWaterparkDashboardWidget(requests) {
     }
 
     let html = `
-        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mb-8">
-            <div class="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <span class="text-2xl">💦</span> รายการรออนุมัติ (สำหรับผู้พิจารณา)
+        <div class="bg-white/10 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/20 overflow-hidden mb-8">
+            <div class="p-6 border-b border-white/10 bg-white/5 flex justify-between items-center flex-wrap gap-4">
+                <h3 class="text-xl font-black text-white flex items-center gap-3">
+                    <span class="text-3xl filter drop-shadow-md">💦</span> 
+                    <span>รายการรออนุมัติด่วน <span class="text-cyan-300 text-sm font-medium ml-2">(เฉพาะสวนน้ำ)</span></span>
                 </h3>
-                <span class="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1 rounded-full animate-pulse">${requests.length} รายการ</span>
+                <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-sm font-bold px-4 py-1.5 rounded-full shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse flex items-center gap-2">
+                    <span class="w-2 h-2 bg-rose-400 rounded-full"></span>
+                    ${requests.length} รายการ
+                </span>
             </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200">
-                    <thead class="bg-slate-100">
-                        <tr>
-                            <th class="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase w-12">ดูข้อมูล</th>
-                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">วันที่ส่งคำขอ</th>
-                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">ผู้ขอสิทธิ์</th>
-                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">วันเข้าใช้บริการ</th>
-                            <th class="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">ผู้ติดตาม</th>
-                            <th class="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">การจัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-slate-100">
+            <div class="p-6">
+                <div class="flex flex-col gap-3">
     `;
 
     requests.forEach(req => {
@@ -198,19 +191,18 @@ function renderWaterparkDashboardWidget(requests) {
         const discountCount = req.guests.filter(g => g.ticketType === '50_DISCOUNT').length;
 
         let guestsHtml = req.guests.map(g => `
-            <div class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-slate-100 shadow-sm mb-1.5 last:mb-0">
-                <span class="text-xs text-slate-700 font-bold flex items-center gap-2">
-                    <img src="${getImageUrl(g.idCardImageUrl)}" class="w-8 h-5 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
+            <div class="flex items-center justify-between bg-white/5 px-3 py-2.5 rounded-xl border border-white/10 mb-2 last:mb-0 hover:bg-white/10 transition-colors">
+                <span class="text-xs text-indigo-100 font-bold flex items-center gap-3">
+                    <img src="${getImageUrl(g.idCardImageUrl)}" class="w-10 h-6 object-cover rounded shadow-md border border-white/20 cursor-pointer hover:scale-110 transition-transform" onclick="openImageModal(this.src)" title="คลิกเพื่อขยายรูป">
                     ${g.fullName}
                 </span>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${g.ticketType === 'FREE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}</span>
+                <span class="text-[10px] font-black px-2.5 py-1 rounded-md shadow-sm ${g.ticketType === 'FREE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
+                    ${g.ticketType === 'FREE' ? 'ฟรี' : 'ลด 50%'}
+                </span>
             </div>
         `).join('');
         
-        if (req.guests.length === 0) guestsHtml = '<p class="text-[11px] text-slate-400 italic text-center py-2">ไม่มีผู้ติดตาม</p>';
-
-        const accordionId = `accordion-${req._id}`;
-        const iconId = `icon-${req._id}`;
+        if (req.guests.length === 0) guestsHtml = '<p class="text-xs text-slate-400 italic text-center py-4 bg-white/5 rounded-xl border border-white/5">ไม่มีผู้ติดตาม</p>';
 
         let actionButtons = '';
         let canApprove = false;
@@ -224,61 +216,63 @@ function renderWaterparkDashboardWidget(requests) {
 
         if (canApprove) {
             actionButtons = `
-                <div class="flex justify-center gap-2">
-                    <button class="wp-reject-btn bg-white hover:bg-rose-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 text-[11px] font-bold py-1.5 px-3 rounded-lg transition-colors" data-id="${req._id}">ปฏิเสธ</button>
-                    <button class="wp-approve-btn bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-lg shadow-sm transition-all" data-id="${req._id}">อนุมัติ</button>
+                <div class="flex gap-2 w-full">
+                    <button class="wp-reject-btn flex-1 bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-black py-2 px-3 rounded-lg transition-all shadow-sm" data-id="${req._id}">ปฏิเสธ</button>
+                    <button class="wp-approve-btn flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-xs font-black py-2 px-3 rounded-lg shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-all transform hover:-translate-y-0.5" data-id="${req._id}">อนุมัติ</button>
                 </div>
             `;
         } else if (req.status === 'Pending_Head') {
-            actionButtons = `<span class="text-[10px] text-yellow-600 font-bold bg-yellow-50 px-2 py-1 rounded border border-yellow-100">รอหัวหน้าแผนก</span>`;
+            actionButtons = `<div class="text-center w-full"><span class="text-[10px] text-amber-300 font-bold bg-amber-500/20 px-2 py-1.5 rounded border border-amber-500/30 inline-block w-full">⏳ รอหัวหน้าพิจารณา</span></div>`;
         }
 
         html += `
-            <tr class="hover:bg-slate-50 transition-colors">
-                <td class="px-4 py-3 text-center">
-                    <!-- ปุ่มเปิด-ปิด ข้อมูล -->
-                    <button onclick="document.getElementById('${accordionId}').classList.toggle('hidden'); document.getElementById('${iconId}').classList.toggle('-rotate-90');" class="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all border border-slate-200">
-                        <svg id="${iconId}" class="w-4 h-4 transition-transform duration-300 transform -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
-                    </button>
-                </td>
-                <td class="px-4 py-3 text-xs text-slate-500 font-medium">${reqDate}</td>
-                <td class="px-4 py-3 text-sm font-bold text-slate-800">${req.username}</td>
-                <td class="px-4 py-3 text-sm font-bold text-cyan-600">${d}</td>
-                <td class="px-4 py-3 text-center">
-                    <span class="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">${req.guests.length} คน</span>
-                </td>
-                <td class="px-4 py-3 text-center">
-                    ${actionButtons}
-                </td>
-            </tr>
-            <!-- ส่วนที่ซ่อนอยู่ (Accordion) -->
-            <tr id="${accordionId}" class="hidden bg-slate-50/80 shadow-inner">
-                <td colspan="6" class="px-6 py-4 border-b border-slate-200">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                            <p class="text-[10px] font-black text-indigo-500 uppercase tracking-wider mb-2">📋 ข้อมูลทั่วไป</p>
-                            <p class="text-xs text-slate-700 mb-1.5">รหัสรายการ: <span class="font-bold text-slate-900">${req.bookingId}</span></p>
-                            <p class="text-xs text-slate-700 mb-1.5">พนักงานเข้าสวนน้ำด้วย: <span class="font-bold ${req.isEmployeeEntering ? 'text-emerald-600' : 'text-slate-500'}">${req.isEmployeeEntering ? 'ใช่ (ฟรี)' : 'ไม่เข้า'}</span></p>
-                            <div class="mt-3 flex gap-2">
-                                <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 shadow-sm">สิทธิ์ฟรี: ${freeCount}</span>
-                                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 shadow-sm">ลด 50%: ${discountCount}</span>
-                            </div>
+            <div class="bg-slate-800/50 rounded-xl p-4 border border-white/10 shadow-sm relative overflow-hidden hover:bg-slate-800/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-cyan-400 to-blue-500"></div>
+                
+                <div class="flex-1 pl-2 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                    <div>
+                        <h4 class="text-sm font-black text-white">${req.username}</h4>
+                        <p class="text-[10px] text-slate-400 mt-0.5">ส่ง: ${reqDate}</p>
+                    </div>
+
+                    <div>
+                        <div class="text-[11px] text-cyan-300 font-bold bg-cyan-500/10 px-2 py-1 rounded border border-cyan-500/20 inline-flex items-center gap-1">
+                            📅 เข้า: ${d}
                         </div>
-                        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                            <p class="text-[10px] font-black text-indigo-500 uppercase tracking-wider mb-2">👥 รายชื่อผู้ติดตาม</p>
-                            <div class="max-h-32 overflow-y-auto pr-2 space-y-1.5">
-                                ${guestsHtml}
-                            </div>
+                        <p class="text-[10px] mt-1 ${req.isEmployeeEntering ? 'text-emerald-400' : 'text-slate-500'}">
+                            พนักงาน: ${req.isEmployeeEntering ? '✅ เข้า (ฟรี)' : '❌ ไม่เข้า'}
+                        </p>
+                    </div>
+
+                    <div>
+                        <p class="text-[11px] font-bold text-indigo-300 mb-1">
+                            👥 ผู้ติดตาม (${req.guests.length} คน)
+                        </p>
+                        <div class="flex gap-2 items-center text-[10px]">
+                            <span class="text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">ฟรี: ${freeCount}</span>
+                            <span class="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">ลด50%: ${discountCount}</span>
                         </div>
                     </div>
-                </td>
-            </tr>
+
+                    <div class="flex flex-col gap-2 items-end md:items-center justify-center w-full">
+                        ${actionButtons}
+                        <button class="text-[10px] text-slate-400 hover:text-white underline transition-colors" onclick="document.getElementById('details-${req._id}').classList.toggle('hidden')">
+                            ดูรายชื่อผู้ติดตาม ⬇️
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="details-${req._id}" class="hidden bg-slate-900/50 rounded-xl p-4 mt-1 border border-white/5 mx-2">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    ${guestsHtml}
+                </div>
+            </div>
         `;
     });
 
     html += `
-                    </tbody>
-                </table>
+                </div>
             </div>
         </div>
     `;
