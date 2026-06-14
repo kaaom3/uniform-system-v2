@@ -187,7 +187,7 @@ async function handleSubmitRequest(e) {
 function displayRequests(requests) {
     const tableBody = document.getElementById('my-requests-table');
     tableBody.innerHTML = '';
-    if (!requests || requests.length === 0) return tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-4 text-slate-500">ไม่พบข้อมูล</td></tr>`;
+    if (!requests || requests.length === 0) return tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-4 text-slate-700">ไม่พบข้อมูล</td></tr>`;
 
     requests.forEach(req => {
         let actionButton = (req.status === 'Approved' && req.quantity > 0) ? `<span class="text-xs text-indigo-400 font-bold">คืนได้ในฟอร์มซ้ายมือ</span>` : '-';
@@ -196,16 +196,16 @@ function displayRequests(requests) {
             'pending':'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
             'approved':'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
             'rejected':'bg-rose-500/20 text-rose-300 border-rose-500/30',
-            'returned':'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+            'returned':'bg-indigo-500/20 text-[#0054a8] border-indigo-500/30',
             'pending-return':'bg-orange-500/20 text-orange-300 border-orange-500/30'
         };
-        const statusClass = statusMap[safeStatus] || 'bg-white/10 text-white border-white/20';
+        const statusClass = statusMap[safeStatus] || 'bg-white/10 text-white border-[#27aae1]/30';
 
-        tableBody.innerHTML += `<tr class="hover:bg-white/10 transition-colors border-b border-white/5 last:border-0">
-            <td class="p-4 text-[10px] text-indigo-200/70 whitespace-nowrap">${new Date(req.createdAt).toLocaleString()}</td>
-            <td class="p-4 text-xs font-medium text-white">${req.itemType} <span class="text-indigo-300/70">(ไซส์ ${req.size}) x <span class="font-bold text-cyan-300">${req.quantity}</span></span></td>
+        tableBody.innerHTML += `<tr class="hover:bg-white/10 transition-colors border-b border-[#27aae1]/10 last:border-0">
+            <td class="p-4 text-[10px] text-slate-600/70 whitespace-nowrap">${new Date(req.createdAt).toLocaleString()}</td>
+            <td class="p-4 text-xs font-medium text-slate-800">${req.itemType} <span class="text-[#0054a8]/70">(ไซส์ ${req.size}) x <span class="font-bold text-vana-cyan">${req.quantity}</span></span></td>
             <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border shadow-sm ${statusClass}">${req.status}</span></td>
-            <td class="p-4 text-[11px] text-slate-300 truncate max-w-[150px]" title="${req.notes || '-'}">${req.notes || '-'}</td>
+            <td class="p-4 text-[11px] text-slate-600 truncate max-w-[150px]" title="${req.notes || '-'}">${req.notes || '-'}</td>
             <td class="p-4 text-sm">${actionButton}</td>
         </tr>`;
     });
@@ -214,12 +214,12 @@ function displayRequests(requests) {
 function displayCurrentUserHoldings(holdings) {
     const listDiv = document.getElementById('my-holdings-list');
     listDiv.innerHTML = '';
-    if (!holdings || Object.keys(holdings).length === 0 || holdings.error) return listDiv.innerHTML = `<p class="text-center text-slate-400 text-sm mt-4">คุณไม่มีพัสดุที่ถือครองอยู่</p>`;
+    if (!holdings || Object.keys(holdings).length === 0 || holdings.error) return listDiv.innerHTML = `<p class="text-center text-slate-600 text-sm mt-4">คุณไม่มีพัสดุที่ถือครองอยู่</p>`;
     
     for (const item in holdings) {
-        listDiv.innerHTML += `<div class="flex justify-between items-center text-sm bg-white/5 p-3 rounded-xl border border-white/10 mb-2">
-            <span class="font-medium text-slate-200">${item}</span>
-            <span class="font-bold text-white bg-white/20 px-3 py-1 rounded-lg">${holdings[item]} ชิ้น</span>
+        listDiv.innerHTML += `<div class="flex justify-between items-center text-sm bg-white/60 p-3 rounded-xl border border-[#27aae1]/20 mb-2">
+            <span class="font-medium text-slate-700">${item}</span>
+            <span class="font-bold text-slate-800 bg-white/90 px-3 py-1 rounded-lg">${holdings[item]} ชิ้น</span>
         </div>`;
     }
 }

@@ -48,6 +48,10 @@ function handleTabClick(tabName) {
         if (tabName === 'stock') stockSubmenu.classList.remove('hidden'); 
         else stockSubmenu.classList.add('hidden'); 
     }
+    
+    if (tabName === 'wp-reports' && document.getElementById('wp-report-month-input')?.value) {
+        fetchMonthlyWaterparkReport();
+    }
 }
 
 function showNotification(msg, type='success') { 
@@ -206,10 +210,12 @@ function checkAdminSession() {
     loadAdminData(); 
     startPollingForUpdates();
     
-    const tmr = new Date(); 
-    tmr.setDate(tmr.getDate() + 1); 
-    const tmrStr = tmr.toISOString().split('T')[0];
-    if(document.getElementById('wp-report-date-input')) document.getElementById('wp-report-date-input').value = tmrStr;
+    const today = new Date(); 
+    const todayMonthStr = today.toISOString().split('-').slice(0, 2).join('-');
+    if(document.getElementById('wp-report-month-input')) {
+        document.getElementById('wp-report-month-input').value = todayMonthStr;
+        fetchMonthlyWaterparkReport();
+    }
 }
 
 async function loadAdminData() {
@@ -466,17 +472,84 @@ async function loadWaterparkApprovals() {
     } catch (err) { console.error(err); }
 }
 
-async function fetchDailyWaterparkReport() {
-    const dateInput = document.getElementById('wp-report-date-input'); 
+
+async function fetchMonthlyWaterparkReport() {
+    const monthInput = document.getElementById('wp-report-month-input');
+    const monthVal = monthInput.value;
+    const gridContainer = document.getElementById('wp-monthly-grid-container');
+    const wrapper = document.getElementById('wp-daily-report-wrapper');
+    
+    if(!monthVal) return;
+    
+    gridContainer.classList.remove('hidden');
+    wrapper.classList.add('hidden');
+    gridContainer.innerHTML = '<div class="col-span-full p-8 text-center text-slate-500 font-bold">กำลังโหลดข้อมูลเดือนนี้...</div>';
+
+    try {
+        const res = await apiCall(`/api/waterpark/reports/by-month?month=${monthVal}`);
+        
+        if (res.length === 0) {
+            gridContainer.innerHTML = '<div class="col-span-full p-12 text-center text-slate-400"><svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><p class="font-medium text-sm">ไม่มีข้อมูลการจองในเดือนนี้</p></div>';
+            return;
+        }
+
+        let html = '';
+        const monthsTh = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+        res.forEach(daySum => {
+            const dateObj = new Date(daySum.date);
+            const totalPeople = daySum.totalEmployeesEntering + daySum.totalGuests;
+
+            html += `
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 hover:shadow-md hover:border-cyan-400 transition-all cursor-pointer group flex flex-col justify-between" onclick="openDailyWaterparkReport('${daySum.date}')">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="bg-cyan-50 text-cyan-700 font-bold px-3 py-1 rounded-lg text-sm border border-cyan-100">
+                            ${dateObj.getDate()} ${monthsTh[dateObj.getMonth()]}
+                        </div>
+                        <div class="text-right">
+                            <span class="text-2xl font-bold text-slate-800">${totalPeople}</span>
+                            <span class="text-xs text-slate-500 font-medium ml-1">คน</span>
+                        </div>
+                    </div>
+                    <div class="space-y-1 mt-auto">
+                        <div class="flex justify-between text-xs font-medium text-slate-500">
+                            <span>พนักงาน:</span>
+                            <span class="text-slate-700 font-bold">${daySum.totalEmployeesEntering}</span>
+                        </div>
+                        <div class="flex justify-between text-xs font-medium text-slate-500">
+                            <span>ผู้ติดตาม:</span>
+                            <span class="text-slate-700 font-bold">${daySum.totalGuests}</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 text-center text-[11px] font-bold text-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                        คลิกดูตารางรายละเอียด &rarr;
+                    </div>
+                </div>
+            `;
+        });
+        
+        gridContainer.innerHTML = html;
+        
+    } catch(e) {
+        gridContainer.innerHTML = `<div class="col-span-full p-8 text-center text-rose-500 font-bold">เกิดข้อผิดพลาด: ${e.message}</div>`;
+    }
+}
+
+window.openDailyWaterparkReport = function(dateStr) {
+    document.getElementById('wp-monthly-grid-container').classList.add('hidden');
+    document.getElementById('wp-daily-report-wrapper').classList.remove('hidden');
+    window.currentDailyReportDate = dateStr;
+    fetchDailyWaterparkReport(dateStr);
+};
+
+async function fetchDailyWaterparkReport(overrideDate) {
     const container = document.getElementById('wp-daily-report-container');
     const printBtn = document.getElementById('wp-print-report-btn'); 
-    const fetchBtn = document.getElementById('wp-fetch-report-btn');
-    const dateVal = dateInput.value; 
+    const dateVal = typeof overrideDate === 'string' ? overrideDate : window.currentDailyReportDate;
     
     if(!dateVal) return showNotification('กรุณาเลือกวันที่', 'error');
 
-    fetchBtn.disabled = true; 
-    fetchBtn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>';
+    container.innerHTML = '<div class="p-12 text-center text-slate-400"><div class="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>กำลังโหลดข้อมูล...</div>';
 
     try {
         const res = await apiCall(`/api/waterpark/reports/by-date?date=${dateVal}`); 
@@ -576,7 +649,8 @@ async function fetchDailyWaterparkReport() {
 function handlePrintWaterparkReport() {
     if (!AppState.currentDailyReportData || AppState.currentDailyReportData.length === 0) return showNotification('ไม่มีข้อมูลให้พิมพ์', 'error');
     
-    const dateVal = document.getElementById('wp-report-date-input').value; 
+    const dateVal = window.currentDailyReportDate;
+    if(!dateVal) return showNotification('กรุณาระบุวันที่ก่อนพิมพ์', 'error'); 
     const targetDate = new Date(dateVal); 
     const dateStr = targetDate.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -2368,7 +2442,11 @@ function setupAdminEventListeners() {
         printBtn.innerHTML = `พิมพ์ใบลงนาม (PDF)`; 
     }
 
-    document.getElementById('wp-fetch-report-btn')?.addEventListener('click', fetchDailyWaterparkReport);
+    document.getElementById('wp-report-month-input')?.addEventListener('change', fetchMonthlyWaterparkReport);
+    document.getElementById('wp-back-to-month-btn')?.addEventListener('click', () => { 
+        document.getElementById('wp-daily-report-wrapper').classList.add('hidden'); 
+        document.getElementById('wp-monthly-grid-container').classList.remove('hidden'); 
+    });
     document.getElementById('wp-print-report-btn')?.addEventListener('click', handlePrintWaterparkReport);
 
     document.getElementById('btn-open-affiliate-modal')?.addEventListener('click', () => {
@@ -2442,7 +2520,7 @@ function setupAdminEventListeners() {
             showNotification('บันทึกคิวพนักงานเครือและอนุมัติสำเร็จ!', 'success'); 
             closeModalAnimation(document.getElementById('affiliate-modal'));
             loadWaterparkApprovals(); 
-            if(document.getElementById('wp-report-date-input')?.value) fetchDailyWaterparkReport(); 
+            if(window.currentDailyReportDate && !document.getElementById('wp-daily-report-wrapper').classList.contains('hidden')) fetchDailyWaterparkReport(window.currentDailyReportDate); else if(document.getElementById('wp-report-month-input')?.value) fetchMonthlyWaterparkReport(); 
         } catch (err) { showNotification(err.message, 'error'); } 
         finally { showLoadingButton(btn, false, 'บันทึก & อนุมัติทันที'); btn.dataset.isProcessing = 'false'; }
     });
@@ -2557,7 +2635,7 @@ function setupAdminEventListeners() {
                     await apiCall(`/api/waterpark/admin/cancel/${btn.dataset.id}`, 'PUT', { adminUser: AppState.currentUser.username }); 
                     showNotification('ยกเลิกรายการจองสำเร็จ', 'success'); 
                     loadWaterparkApprovals(); 
-                    if(document.getElementById('wp-report-date-input')?.value) fetchDailyWaterparkReport(); 
+                    if(window.currentDailyReportDate && !document.getElementById('wp-daily-report-wrapper').classList.contains('hidden')) fetchDailyWaterparkReport(window.currentDailyReportDate); else if(document.getElementById('wp-report-month-input')?.value) fetchMonthlyWaterparkReport(); 
                 } 
                 catch(err) { showNotification(err.message, 'error'); btn.innerHTML = originalHtml; btn.disabled = false; }
             });
@@ -2572,7 +2650,7 @@ function setupAdminEventListeners() {
                     await apiCall(`/api/waterpark/admin/remove-guest/${btn.dataset.id}`, 'PUT', { guestIndex: btn.dataset.index, adminUser: AppState.currentUser.username }); 
                     showNotification('ลบรายชื่อสำเร็จ', 'success'); 
                     loadWaterparkApprovals(); 
-                    if(document.getElementById('wp-report-date-input')?.value) fetchDailyWaterparkReport(); 
+                    if(window.currentDailyReportDate && !document.getElementById('wp-daily-report-wrapper').classList.contains('hidden')) fetchDailyWaterparkReport(window.currentDailyReportDate); else if(document.getElementById('wp-report-month-input')?.value) fetchMonthlyWaterparkReport(); 
                 } 
                 catch(err) { showNotification(err.message, 'error'); btn.innerHTML = originalHtml; btn.disabled = false; }
             });

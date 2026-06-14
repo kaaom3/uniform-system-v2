@@ -814,6 +814,51 @@ router.get('/audit/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/reports/by-month', async (req, res) => {
+    try {
+        const monthParam = req.query.month; // Expected format: YYYY-MM
+        if (!monthParam) return res.status(400).json({ error: 'กรุณาระบุเดือน (YYYY-MM)' });
+
+        const [year, month] = monthParam.split('-');
+        const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0);
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+
+        const bookings = await WaterparkBooking.find({
+            visitDate: { $gte: startOfMonth, $lte: endOfMonth },
+            status: 'Approved'
+        });
+
+        // Group by date string (YYYY-MM-DD)
+        const summaryMap = {};
+
+        bookings.forEach(b => {
+            const dateStr = b.visitDate.toISOString().split('T')[0];
+            if (!summaryMap[dateStr]) {
+                summaryMap[dateStr] = {
+                    date: dateStr,
+                    totalBookings: 0,
+                    totalEmployeesEntering: 0,
+                    totalGuests: 0,
+                    totalFreeGuestsUsed: 0,
+                    totalDiscountGuestsUsed: 0
+                };
+            }
+            
+            const daySum = summaryMap[dateStr];
+            daySum.totalBookings += 1;
+            if (b.isEmployeeEntering) daySum.totalEmployeesEntering += 1;
+            daySum.totalGuests += b.guests.length;
+            daySum.totalFreeGuestsUsed += b.totalFreeGuestsUsed || 0;
+            daySum.totalDiscountGuestsUsed += b.totalDiscountGuestsUsed || 0;
+        });
+
+        // Convert map to sorted array
+        const reportData = Object.values(summaryMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        res.json(reportData);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/reports/by-date', async (req, res) => {
     try {
         const dateParam = req.query.date;
