@@ -2349,7 +2349,10 @@ function renderAllHistoryTable() {
                 </td>
                 <td class="p-3 text-xs font-medium text-slate-800">${req.itemType} <span class="text-slate-500">(ไซส์ ${req.size}) x <span class="font-bold text-indigo-600">${req.quantity}</span></span></td>
                 <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${statusClass}">${req.status}</span></td>
-                <td class="p-3 text-[11px] text-slate-600">${req.notes || '-'}</td>
+                <td class="p-3 text-[11px] text-slate-600 max-w-[200px] truncate" title="เหตุผล: ${req.reason || '-'}\nหมายเหตุ: ${req.notes || '-'}">
+                    <span class="font-bold text-indigo-500">${req.reason || 'เบิกพัสดุ'}</span><br/>
+                    <span class="text-slate-500">${req.notes || '-'}</span>
+                </td>
             </tr>`;
     });
     
