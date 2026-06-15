@@ -154,6 +154,10 @@
                             <h3 class="text-2xl font-bold text-slate-800">คำขอเข้าสวนน้ำ (รออนุมัติ)</h3>
                             <span class="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-bold rounded-lg mt-2 inline-block">WATERPARK APPROVALS</span>
                         </div>
+                        
+                        <button id="btn-open-director-proxy-modal" class="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2.5 px-4 rounded-lg shadow-md transition-all text-sm flex items-center justify-center gap-2 btn-press">
+                            <span class="text-lg leading-none">👨‍💼</span> จองแทนผู้บริหาร (Director)
+                        </button>
                         <button id="btn-open-affiliate-modal" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-md transition-all text-sm flex items-center justify-center gap-2 btn-press">
                             <span class="text-lg leading-none">➕</span> คีย์คิวพนักงานในเครือ
                         </button>
@@ -417,5 +421,52 @@
     <div id="relatives-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm overflow-y-auto h-full w-full z-[100] flex items-center justify-center opacity-0 transition-opacity"><div class="relative mx-auto p-0 border border-slate-200 w-full max-w-2xl shadow-lg rounded-2xl bg-white modal-container scale-95 transition-all overflow-hidden flex flex-col max-h-[90vh]"><div class="p-5 border-b border-slate-100 flex justify-between items-center bg-cyan-600"><h3 class="text-lg font-bold text-white flex items-center gap-2" id="relatives-modal-title"><span class="text-xl">👥</span> ประวัติรายชื่อญาติ</h3><button id="close-relatives-modal-btn" class="text-cyan-100 hover:text-white transition-colors p-1 rounded-lg hover:bg-cyan-700"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button></div><div class="p-6 overflow-y-auto bg-slate-50 flex-grow" id="relatives-modal-content"><p class="text-center text-slate-500 py-4">กำลังโหลดข้อมูล...</p></div></div></div>
     
     <script src="admin.js"></script>
+
+    <!-- Director Proxy Booking Modal -->
+    <div id="director-proxy-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm overflow-y-auto h-full w-full z-[100] flex items-center justify-center opacity-0 transition-opacity">
+        <div class="relative mx-auto p-0 border border-slate-200 w-full max-w-3xl shadow-lg rounded-2xl bg-white modal-container scale-95 transition-all overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-cyan-500 to-blue-500">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="text-xl">👨‍💼</span> สร้างรายการจองแทนผู้บริหาร (Director Proxy)
+                </h3>
+                <button id="close-director-proxy-modal-btn" class="text-cyan-100 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/20"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto flex-1">
+                <form id="director-proxy-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">เลือกผู้บริหาร (Tier3_Director)</label>
+                            <select id="proxy-director-select" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all font-medium">
+                                <option value="" disabled selected>กำลังโหลดรายชื่อ...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">วันที่เข้าสวนน้ำ</label>
+                            <input type="date" id="proxy-visit-date" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all font-medium">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-4">
+                            <label class="block text-sm font-bold text-slate-700">รายชื่อผู้ติดตาม</label>
+                            <button type="button" id="proxy-add-guest-btn" class="text-cyan-600 hover:text-cyan-800 text-sm font-bold bg-cyan-50 hover:bg-cyan-100 py-1.5 px-3 rounded-lg transition-colors flex items-center gap-1">
+                                <span>+</span> เพิ่มผู้ติดตาม
+                            </button>
+                        </div>
+                        <div id="proxy-guests-container" class="space-y-3">
+                            <!-- Guests will be dynamically added here -->
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-2xl shrink-0">
+                <button type="button" id="cancel-director-proxy-btn" class="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-lg transition-all text-sm btn-press">ยกเลิก</button>
+                <button type="submit" form="director-proxy-form" class="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-bold rounded-lg shadow-md transition-all text-sm btn-press">ยืนยันการจอง</button>
+            </div>
+        </div>
+    </div>
+    
 </body>
 </html>

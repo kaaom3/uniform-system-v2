@@ -2930,3 +2930,189 @@ function setupAdminEventListeners() {
         }
     });
 }
+
+
+
+// ==========================================
+// 🚀 DIRECTOR PROXY BOOKING
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const proxyModal = document.getElementById('director-proxy-modal');
+    const openProxyBtn = document.getElementById('btn-open-director-proxy-modal');
+    const closeProxyBtn = document.getElementById('close-director-proxy-modal-btn');
+    const cancelProxyBtn = document.getElementById('cancel-director-proxy-btn');
+    const proxyForm = document.getElementById('director-proxy-form');
+    const proxyDirectorSelect = document.getElementById('proxy-director-select');
+    const proxyAddGuestBtn = document.getElementById('proxy-add-guest-btn');
+    const proxyGuestsContainer = document.getElementById('proxy-guests-container');
+
+    if (!proxyModal || !openProxyBtn) return;
+
+    let proxyGuests = [];
+
+    async function loadDirectors() {
+        try {
+            proxyDirectorSelect.innerHTML = '<option value="" disabled selected>กำลังโหลดรายชื่อ...</option>';
+            const directors = await apiCall('/api/waterpark/admin/directors');
+            
+            if (directors.length === 0) {
+                proxyDirectorSelect.innerHTML = '<option value="" disabled selected>ไม่มีรายชื่อ Director (Tier3)</option>';
+                return;
+            }
+
+            let html = '<option value="" disabled selected>-- เลือกผู้บริหาร --</option>';
+            directors.forEach(d => {
+                html += `<option value="${d.username}">${d.name} (${d.department || 'N/A'})</option>`;
+            });
+            proxyDirectorSelect.innerHTML = html;
+        } catch (err) {
+            console.error("Failed to load directors", err);
+            proxyDirectorSelect.innerHTML = '<option value="" disabled selected>เกิดข้อผิดพลาดในการโหลด</option>';
+        }
+    }
+
+    function renderProxyGuests() {
+        proxyGuestsContainer.innerHTML = '';
+        if (proxyGuests.length === 0) {
+            proxyGuestsContainer.innerHTML = '<p class="text-sm text-slate-400 text-center py-2 border border-dashed border-slate-200 rounded-lg">ยังไม่มีผู้ติดตาม</p>';
+            return;
+        }
+        
+        proxyGuests.forEach((guest, index) => {
+            const div = document.createElement('div');
+            div.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in-up space-y-3 relative';
+            div.innerHTML = `
+                <button type="button" class="absolute top-2 right-2 text-rose-500 hover:text-rose-700 p-1.5 bg-rose-50 rounded-lg" onclick="window.removeProxyGuest(${index})" title="ลบผู้ติดตาม">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pr-8">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label>
+                        <input type="text" placeholder="ชื่อ-นามสกุล" value="${guest.fullName || ''}" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none" onchange="window.updateProxyGuest(${index}, 'fullName', this.value)" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">ประเภทตั๋ว</label>
+                        <select class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none" onchange="window.updateProxyGuest(${index}, 'ticketType', this.value)">
+                            <option value="FREE" ${guest.ticketType === 'FREE' ? 'selected' : ''}>FREE</option>
+                            <option value="50_DISCOUNT" ${guest.ticketType === '50_DISCOUNT' ? 'selected' : ''}>50% DISCOUNT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">เลขบัตรประจำตัวประชาชน</label>
+                        <input type="text" placeholder="เลขบัตรฯ 13 หลัก" value="${guest.idCardNumber || ''}" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none" onchange="window.updateProxyGuest(${index}, 'idCardNumber', this.value)" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">วันหมดอายุบัตร</label>
+                        <input type="date" value="${guest.idCardExpiry || ''}" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none" onchange="window.updateProxyGuest(${index}, 'idCardExpiry', this.value)" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-slate-500 mb-1">แนบรูปถ่ายบัตรประชาชน</label>
+                        <input type="file" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100" onchange="window.handleProxyGuestImage(event, ${index})" ${guest.file || guest.idCardImageUrl ? '' : 'required'}>
+                        ${guest.localUrl ? `<img src="${guest.localUrl}" class="h-20 mt-2 rounded object-cover border border-slate-200">` : ''}
+                    </div>
+                </div>
+            `;
+            proxyGuestsContainer.appendChild(div);
+        });
+    }
+
+    window.updateProxyGuest = (index, field, value) => {
+        proxyGuests[index][field] = value;
+    };
+
+    window.handleProxyGuestImage = (e, index) => {
+        const file = e.target.files[0];
+        if (file) {
+            proxyGuests[index].file = file;
+            proxyGuests[index].localUrl = URL.createObjectURL(file);
+            renderProxyGuests();
+        }
+    };
+
+    window.removeProxyGuest = (index) => {
+        proxyGuests.splice(index, 1);
+        renderProxyGuests();
+    };
+
+    proxyAddGuestBtn.addEventListener('click', () => {
+        proxyGuests.push({ fullName: '', ticketType: 'FREE', idCardNumber: '', idCardExpiry: '', idCardImageUrl: '' });
+        renderProxyGuests();
+    });
+
+    openProxyBtn.addEventListener('click', () => {
+        proxyForm.reset();
+        proxyGuests = [];
+        renderProxyGuests();
+        
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        document.getElementById('proxy-visit-date').min = `${year}-${month}-${day}`;
+        
+        loadDirectors();
+        openModalAnimation(proxyModal);
+    });
+
+    const closeProxy = () => closeModalAnimation(proxyModal);
+    closeProxyBtn.addEventListener('click', closeProxy);
+    cancelProxyBtn.addEventListener('click', closeProxy);
+
+    proxyForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const targetUsername = proxyDirectorSelect.value;
+        const visitDate = document.getElementById('proxy-visit-date').value;
+        
+        if (!targetUsername) {
+            showNotification('กรุณาเลือกผู้บริหาร', 'error');
+            return;
+        }
+
+        const submitBtn = proxyForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerText;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⏳</span> กำลังอัปโหลดรูปภาพและบันทึก...';
+
+        try {
+            // Upload images for all guests first
+            for (let guest of proxyGuests) {
+                if (guest.file) {
+                    const formData = new FormData();
+                    formData.append('image', guest.file);
+                    
+                    const uploadRes = await fetch((window.API_BASE_URL || '') + '/api/upload', { 
+                        method: 'POST', 
+                        body: formData 
+                    }).then(r => r.json());
+                    
+                    if (uploadRes.error) throw new Error(uploadRes.error);
+                    
+                    guest.idCardImageUrl = uploadRes.imageUrl;
+                    delete guest.file;
+                    delete guest.localUrl;
+                }
+            }
+
+            await apiCall('/api/waterpark/admin/proxy-book', 'POST', {
+                targetUsername,
+                visitDate,
+                guests: proxyGuests,
+                adminUser: AppState.currentUser.username
+            });
+            
+            showNotification('ทำรายการจองแทนผู้บริหารสำเร็จ (สถานะ: Pending_HR)');
+            closeProxy();
+            
+            setTimeout(() => {
+                document.getElementById('tab-waterpark').click();
+            }, 500);
+
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = originalText;
+        }
+    });
+});

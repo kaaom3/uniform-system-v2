@@ -1338,4 +1338,81 @@ cron.schedule('0 8 * * *', async () => {
     timezone: "Asia/Bangkok" 
 });
 
+
+// ==========================================
+// 🚀 ADMIN PROXY BOOKING (For Tier3_Director)
+// ==========================================
+
+// 1. Get all Tier3_Directors
+router.get('/admin/directors', async (req, res) => {
+    try {
+        const directors = await User.find({ positionLevel: 'Tier3_Director' }).select('username name department');
+        res.json(directors);
+    } catch (err) {
+        console.error("❌ [API Error] /admin/directors:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Proxy Booking
+router.post('/admin/proxy-book', async (req, res) => {
+    try {
+        const { targetUsername, visitDate, guests, adminUser } = req.body;
+        
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const visit = new Date(visitDate);
+        visit.setHours(0,0,0,0);
+        
+        if (visit < today) return res.status(400).json({ error: 'ไม่สามารถทำรายการจองย้อนหลังได้' });
+
+        const user = await User.findOne({ username: targetUsername });
+        if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้งาน' });
+        
+        if (user.positionLevel !== 'Tier3_Director') {
+            return res.status(400).json({ error: 'สามารถจองแทนได้เฉพาะตำแหน่ง Tier3_Director เท่านั้น' });
+        }
+
+        const bookingId = 'WP-' + Date.now();
+        
+        let freeUsed = 0;
+        let discountUsed = 0;
+        const validGuests = guests && Array.isArray(guests) ? guests : [];
+        
+        validGuests.forEach(g => {
+            if (g.ticketType === 'FREE') freeUsed++;
+            if (g.ticketType === '50_DISCOUNT') discountUsed++;
+        });
+
+        // Set status to Pending_HR explicitly
+        const status = 'Pending_HR';
+
+        const newBooking = new WaterparkBooking({
+            bookingId,
+            username: user.username,
+            visitDate,
+            isEmployeeEntering: true,
+            guests: validGuests,
+            totalFreeGuestsUsed: freeUsed,
+            totalDiscountGuestsUsed: discountUsed,
+            isUrgent: false, // Override urgent checks
+            urgentReason: 'ทำรายการแทนโดย Admin',
+            status,
+            approvalHistory: [
+                {
+                    action: 'PROXY_BOOKED',
+                    actor: adminUser || 'Admin',
+                    note: `ทำรายการแทน ${user.name}`
+                }
+            ]
+        });
+
+        await newBooking.save();
+        res.json({ success: true, bookingId });
+    } catch (err) {
+        console.error("❌ [API Error] /admin/proxy-book:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
