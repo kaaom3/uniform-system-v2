@@ -362,7 +362,11 @@ router.post('/book', async (req, res) => {
                         }
                         
                         const emailPromises = headUsers.map(async (hu) => {
-                            const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                            const targetEmail = hu.email;
+                            if (!targetEmail) {
+                                console.log(`⚠️ [Email System] ข้ามการส่งอีเมลถึง ${hu.username} เนื่องจากไม่ได้ระบุอีเมลในระบบ`);
+                                return;
+                            }
                             
                             const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
                             const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -566,7 +570,11 @@ router.put('/book/:id', async (req, res) => {
                         }
                         
                         const emailPromises = headUsers.map(async (hu) => {
-                            const targetEmail = hu.email || `${hu.username}@yourcompany.com`; 
+                            const targetEmail = hu.email;
+                            if (!targetEmail) {
+                                console.log(`⚠️ [Email System] ข้ามการส่งอีเมลถึง ${hu.username} เนื่องจากไม่ได้ระบุอีเมลในระบบ`);
+                                return;
+                            }
                             
                             const approveToken = jwt.sign({ bookingId: booking._id, action: 'APPROVE', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
                             const rejectToken = jwt.sign({ bookingId: booking._id, action: 'REJECT', headUser: hu.username }, process.env.JWT_SECRET, { expiresIn: '7d' });

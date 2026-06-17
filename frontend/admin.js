@@ -79,6 +79,7 @@ function showLoadingButton(button, isLoading, originalHTML = '') {
 function onAdminActionSuccess(message) { 
     showNotification(message, 'success'); 
     clearUserForm(); 
+    closeModalAnimation(document.getElementById('user-management-modal'));
     resetActionButtons(); 
     refreshData(); 
 }
@@ -1629,7 +1630,7 @@ function renderUsersTable() {
     const deptFilter = document.getElementById('user-dept-filter')?.value || 'ALL';
     
     let filteredData = AppState.allUsersData.filter(user => { 
-        const matchSearch = user.username.toLowerCase().includes(searchTerm) || user.name.toLowerCase().includes(searchTerm); 
+        const matchSearch = (user.username || '').toLowerCase().includes(searchTerm) || (user.name || '').toLowerCase().includes(searchTerm); 
         const userDept = user.department || 'ไม่ระบุ'; 
         const matchDept = deptFilter === 'ALL' || userDept === deptFilter; 
         return matchSearch && matchDept; 
@@ -1642,9 +1643,9 @@ function renderUsersTable() {
     const container = document.getElementById('users-list-table'); 
     if(!container) return;
 
-    const headerDiv = container.previousElementSibling;
+    const headerDiv = container.previousElementSibling?.previousElementSibling;
     if (headerDiv && !document.getElementById('btn-unlock-all')) {
-        const actionsContainer = headerDiv.querySelector('.flex.flex-col.sm\\:flex-row.gap-3');
+        const actionsContainer = headerDiv.querySelector('.flex.gap-2.w-full.sm\\:w-auto');
         if (actionsContainer) {
             const bulkHtml = `
             <div class="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner w-full sm:w-auto order-last sm:order-first">
@@ -1793,9 +1794,13 @@ function populateUserForm(username) {
         if(document.getElementById('user-form-is-head')) document.getElementById('user-form-is-head').checked = user.isHeadApprover === true;
         if(document.getElementById('user-form-reg-unlocked')) document.getElementById('user-form-reg-unlocked').checked = user.waterparkRegUnlocked === true;
         
-        document.getElementById('user-form-username').disabled = false; 
+        document.getElementById('user-form-username').disabled = true; // Disable username on edit
         AppState.currentEditUser = user.username; 
-        toggleUserForm(true);
+        
+        const modalTitle = document.getElementById('user-modal-title');
+        if (modalTitle) modalTitle.innerHTML = '<span class="text-xl">✏️</span> แก้ไขผู้ใช้งาน: <span class="text-indigo-200 ml-1">' + user.username + '</span>';
+        
+        openModalAnimation(document.getElementById('user-management-modal'));
     }
 }
 
@@ -1807,15 +1812,14 @@ function clearUserForm() {
     if(document.getElementById('user-form-username')) document.getElementById('user-form-username').disabled = false; 
     if(document.getElementById('user-form-is-head')) document.getElementById('user-form-is-head').checked = false;
     if(document.getElementById('user-form-reg-unlocked')) document.getElementById('user-form-reg-unlocked').checked = false;
+    
+    const modalTitle = document.getElementById('user-modal-title');
+    if (modalTitle) modalTitle.innerHTML = '<span class="text-xl">👤</span> เพิ่มผู้ใช้งานใหม่';
 }
 
-function toggleUserForm(forceOpen = false) { 
-    const content = document.getElementById('user-form-content'); 
-    if(!content) return;
-    if (forceOpen) content.classList.add('expanded'); 
-    else content.classList.toggle('expanded'); 
-    content.style.maxHeight = content.classList.contains('expanded') ? content.scrollHeight + 'px' : '0px'; 
-    document.getElementById('user-form-toggle-icon').style.transform = content.classList.contains('expanded') ? 'rotate(0deg)' : 'rotate(-180deg)'; 
+function closeUserModal() {
+    closeModalAnimation(document.getElementById('user-management-modal'));
+    clearUserForm();
 }
 
 // ============================================================================
@@ -2417,14 +2421,17 @@ function setupAdminEventListeners() {
 
     document.getElementById('save-user-btn')?.addEventListener('click', handleSaveUser);
     document.getElementById('clear-user-form-btn')?.addEventListener('click', clearUserForm);
-    document.getElementById('import-users-btn')?.addEventListener('click', handleImportUsersCSV);
+    document.getElementById('csv-file-input')?.addEventListener('change', handleImportUsersCSV);
     
     document.getElementById('user-search-input')?.addEventListener('keyup', handleUserSearch);
     document.getElementById('user-dept-filter')?.addEventListener('change', handleUserSearch); 
     
     document.getElementById('prev-user-page-btn')?.addEventListener('click', () => changeUserPage(-1));
     document.getElementById('next-user-page-btn')?.addEventListener('click', () => changeUserPage(1));
-    document.getElementById('toggle-user-form-btn')?.addEventListener('click', () => toggleUserForm());
+        document.getElementById('btn-open-user-modal')?.addEventListener('click', () => { clearUserForm(); openModalAnimation(document.getElementById('user-management-modal')); });
+    document.getElementById('close-user-modal-btn')?.addEventListener('click', closeUserModal);
+    document.getElementById('user-management-modal')?.addEventListener('click', (e) => { if (e.target.id === 'user-management-modal') closeUserModal(); });
+
     
     document.getElementById('admin-history-search')?.addEventListener('keyup', handleHistorySearch);
     document.getElementById('prev-page-btn')?.addEventListener('click', () => changeHistoryPage(-1));
