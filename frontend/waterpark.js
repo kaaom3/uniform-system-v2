@@ -643,7 +643,7 @@ function setupEventListeners() {
     document.getElementById('wp-guest-scan-btn')?.addEventListener('click', () => scanThaiIDCard('wp-guest-idcard', 'wp-guest-'));
 
     // นำเข้าตะกร้าญาติ (เตรียมบันทึก)
-    document.getElementById('wp-add-rel-form')?.addEventListener('submit', async (e) => {
+    document.getElementById('wp-btn-add-rel')?.addEventListener('click', async (e) => {
         e.preventDefault();
         
         const nameInput = document.getElementById('wp-rel-name').value.trim();
@@ -659,14 +659,15 @@ function setupEventListeners() {
         const totalCount = WPState.relatives.length + WPState.relativesCart.length;
         if (totalCount >= 8) return showNotification('โควต้าลงทะเบียนญาติครบ 8 คนแล้ว', 'error');
 
-        const localUrl = URL.createObjectURL(file);
+        showNotification('กำลังประมวลผลรูปภาพและประทับลายน้ำ (PDPA)...', 'info');
+        const watermarked = await addWatermarkToImage(file);
 
         WPState.relativesCart.push({
             fullName: nameInput,
             idCardNumber: idCardNoInput,
             idCardExpiry: idCardExpInput,
-            file: file,
-            localUrl: localUrl
+            file: watermarked.file,
+            localUrl: watermarked.url
         });
 
         document.getElementById('wp-rel-name').value = '';
@@ -806,7 +807,7 @@ function setupEventListeners() {
         }
     });
 
-    function handleAddFreeformGuest(isDiscount) {
+    async function handleAddFreeformGuest(isDiscount) {
         const btnId = isDiscount ? 'wp-btn-add-guest-discount' : 'wp-btn-add-guest';
         const btn = document.getElementById(btnId);
         
@@ -824,14 +825,15 @@ function setupEventListeners() {
         let forceDisc = isDiscount;
         if (btnId === 'wp-btn-add-guest' && btn.dataset.forceDiscount === 'true') forceDisc = true;
 
-        const localUrl = URL.createObjectURL(file);
+        showNotification('กำลังประมวลผลรูปภาพและประทับลายน้ำ (PDPA)...', 'info');
+        const watermarked = await addWatermarkToImage(file);
 
         WPState.cart.push({ 
             fullName: nameInput, 
             idCardNumber: idCardNoInput, 
             idCardExpiry: idCardExpInput, 
-            file: file, // เก็บไฟล์เพื่อรออัปโหลดรวดเดียว
-            localUrl: localUrl,
+            file: watermarked.file, // เก็บไฟล์เพื่อรออัปโหลดรวดเดียว
+            localUrl: watermarked.url,
             forceDiscount: forceDisc 
         });
         
@@ -1079,4 +1081,55 @@ function showLoadingButton(button, isLoading, originalHTML = '') {
     }
 }
 
-function getImageUrl(url) { return url.startsWith('http') ? url : API_BASE_URL + '/' + url; }
+function getImageUrl(url) {
+    if(!url) return '';
+    if(url.startsWith('http') || url.startsWith('data:')) return url;
+    return `${API_BASE_URL}${url}`;
+}
+
+// ================= WATERMARK PDPA =================
+async function addWatermarkToImage(file) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            img.src = e.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                const minDim = Math.min(canvas.width, canvas.height);
+                const fontSize = Math.max(24, Math.floor(minDim * 0.065)); // เพิ่มขนาดฟอนต์ใหญ่ขึ้น
+                ctx.font = `bold ${fontSize}px Sarabun, sans-serif`;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.65)'; // สีขาวทึบขึ้น
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; // ขอบดำเข้มขึ้น
+                ctx.lineWidth = 5; // เส้นขอบหนาขึ้น
+
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate(-Math.PI / 4);
+                
+                const text = 'ใช้สำหรับแนบขอสวัสดิการ Vana Nava เท่านั้น';
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+
+                ctx.strokeText(text, 0, canvas.height / 2);
+                ctx.fillText(text, 0, canvas.height / 2);
+                
+                ctx.strokeText(text, 0, -canvas.height / 2);
+                ctx.fillText(text, 0, -canvas.height / 2);
+
+                canvas.toBlob((blob) => {
+                    const newFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+                    resolve({ file: newFile, url: URL.createObjectURL(blob) });
+                }, 'image/jpeg', 0.85);
+            };
+        };
+        reader.readAsDataURL(file);
+    });
+}
+// ==================================================

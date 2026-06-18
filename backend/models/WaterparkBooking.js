@@ -1,11 +1,27 @@
 const mongoose = require('mongoose');
 
+const { encrypt, decrypt, maskIdCard } = require('../utils/crypto');
+
 const guestSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
-    idCardNumber: { type: String, default: '' },
+    idCardNumber: { 
+        type: String, 
+        default: '',
+        get: decrypt,
+        set: encrypt
+    },
     idCardExpiry: { type: Date }, 
     idCardImageUrl: { type: String, required: true },
     ticketType: { type: String, enum: ['FREE', '50_DISCOUNT'], required: true }
+}, { 
+    toJSON: { 
+        getters: true,
+        transform: function(doc, ret) {
+            if (ret.idCardNumber) ret.idCardNumber = maskIdCard(ret.idCardNumber);
+            return ret;
+        }
+    }, 
+    toObject: { getters: true } 
 });
 
 // 💡 สร้าง Schema ย่อยสำหรับเก็บประวัติแต่ละสเต็ป
