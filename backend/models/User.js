@@ -9,6 +9,10 @@ const userSchema = new mongoose.Schema({
     // 💡 เพิ่มฟิลด์สำหรับเก็บ Email
     email: { type: String, default: '' },
     
+    // 💡 สำหรับผูกบัญชี LINE (LIFF / Messaging API)
+    lineUserId: { type: String, default: '' },
+    
+    
     // ระดับสิทธิ์สวนน้ำ
     positionLevel: { 
         type: String, 

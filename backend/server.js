@@ -23,7 +23,10 @@ const PasswordReset = require('./models/PasswordReset');
 // ==========================================
 // 📂 ROUTERS & UTILS
 // ==========================================
+const WaterparkBooking = require('./models/WaterparkBooking'); 
+
 const waterparkRoutes = require('./routes/waterpark');
+const liffRoutes = require('./routes/liff');
 const { sendPushMessage } = require('./lineNotify'); 
 
 const app = express();
@@ -35,6 +38,9 @@ app.use(express.json());
 
 // เปิดใช้งาน API ของระบบสวนน้ำ
 app.use('/api/waterpark', waterparkRoutes);
+
+// เปิดใช้งาน API ของระบบ LIFF
+app.use('/api/liff', liffRoutes);
 
 // ==========================================
 // ☁️ CLOUDINARY CONFIG

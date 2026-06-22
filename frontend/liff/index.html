@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vana Nava สวัสดิการ (LINE)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- โหลด LINE LIFF SDK -->
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        vana: {
+                            blue: '#0054a8',
+                            cyan: '#27aae1',
+                            pink: '#ee2a7b',
+                            orange: '#ff6900',
+                            yellow: '#ffde17',
+                        }
+                    },
+                    fontFamily: { sans: ['Sarabun', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style> body { font-family: 'Sarabun', sans-serif; } </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Loading State -->
+    <div id="liff-loading" class="flex flex-col items-center justify-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-vana-blue mb-4"></div>
+        <p class="text-sm font-bold text-slate-500 animate-pulse">กำลังโหลดระบบ...</p>
+    </div>
+
+    <!-- Bind Account Form (Hidden by default) -->
+    <div id="bind-form-container" class="hidden w-full max-w-sm bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-vana-blue rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-vana-blue/30">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path>
+                </svg>
+            </div>
+            <h2 class="text-xl font-black text-slate-800">ยืนยันตัวตนพนักงาน</h2>
+            <p class="text-xs text-slate-500 mt-1">กรุณาล็อกอินด้วยรหัสพนักงานของคุณเพื่อผูกบัญชี LINE (ทำเพียงครั้งแรกครั้งเดียว)</p>
+        </div>
+
+        <form id="bind-form" class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">รหัสพนักงาน</label>
+                <input type="text" id="bind-username" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-vana-blue focus:border-transparent block px-4 py-3 outline-none transition-all font-medium" placeholder="เช่น 660001" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">รหัสผ่าน</label>
+                <input type="password" id="bind-password" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-vana-blue focus:border-transparent block px-4 py-3 outline-none transition-all font-medium" placeholder="••••••••" required>
+            </div>
+            
+            <button type="submit" id="bind-btn" class="w-full bg-gradient-to-r from-vana-blue to-vana-cyan hover:from-blue-700 hover:to-cyan-500 text-white font-black py-3.5 rounded-xl shadow-lg shadow-vana-blue/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-6 flex justify-center items-center gap-2">
+                ผูกบัญชีและเข้าสู่ระบบ
+            </button>
+        </form>
+    </div>
+
+    <!-- Error Message -->
+    <div id="error-message" class="hidden text-center p-4 bg-rose-50 border border-rose-200 rounded-2xl max-w-sm w-full">
+        <p class="text-sm font-bold text-rose-600" id="error-text">เกิดข้อผิดพลาด</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
