@@ -101,7 +101,6 @@ async function loadWaterparkDashboard() {
         document.getElementById('wp-free-remain').textContent = WPState.freeRemaining;
         document.getElementById('wp-free-total').textContent = `/ ${WPState.maxFree === 999999 ? '∞' : WPState.maxFree}`;
         
-        renderLatestStatus(data.allBookings);
         renderHistory(data.allBookings);
         renderWaterparkTrackerWidget();
 
