@@ -1133,3 +1133,105 @@ async function addWatermarkToImage(file) {
     });
 }
 // ==================================================
+// ==========================================
+// 📈 TRACKER WIDGET (LIFF)
+// ==========================================
+function renderWaterparkTrackerWidget() {
+    const trackingWidget = document.getElementById('wp-tracking-widget');
+    if (!trackingWidget) return;
+
+    if (!WPState.allBookings || WPState.allBookings.length === 0) {
+        trackingWidget.innerHTML = '';
+        trackingWidget.classList.add('hidden');
+        return;
+    }
+
+    // Filter active bookings (Pending, Approved if in future or today)
+    const todayStr = new Date().toISOString().split('T')[0];
+    let activeBookings = WPState.allBookings.filter(b => {
+        if (b.status === 'Cancelled' || b.status === 'Rejected') return false;
+        const bDateStr = new Date(b.visitDate).toISOString().split('T')[0];
+        if (b.status === 'Approved' && bDateStr < todayStr) return false;
+        return true;
+    });
+
+    // Only show the most recent 1-2 active bookings to save space
+    activeBookings = activeBookings.slice(0, 2);
+
+    if (activeBookings.length === 0) {
+        trackingWidget.innerHTML = '';
+        trackingWidget.classList.add('hidden');
+        return;
+    }
+
+    let html = '';
+    activeBookings.forEach(booking => {
+        const visitDateObj = new Date(booking.visitDate);
+        const visitDateStr = visitDateObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+        
+        let progressPercent = '0%';
+        let step2Active = false;
+        let step3Active = false;
+
+        if (booking.status === 'Pending_Head') {
+            progressPercent = '0%';
+        } else if (booking.status === 'Pending_HR') {
+            progressPercent = '33.33%';
+            step2Active = true;
+        } else if (booking.status === 'Approved') {
+            progressPercent = '66.66%';
+            step2Active = true;
+            step3Active = true;
+        }
+        
+        const cyanBg = 'background-color: #27aae1; color: white; border-color: #27aae1;';
+        const grayBg = 'background-color: white; color: #94a3b8; border-color: #cbd5e1;';
+        const cyanText = 'color: #27aae1;';
+        const grayText = 'color: #94a3b8;';
+
+        html += `
+        <div class="bg-white/90 backdrop-blur-md border border-[#27aae1]/30 p-5 rounded-3xl shadow-lg relative overflow-hidden mb-4">
+            <div class="absolute bottom-0 left-0 right-0 h-16 opacity-20 pointer-events-none" style="background: radial-gradient(circle at 50% 100%, #27aae1 0%, transparent 70%);"></div>
+            
+            <div class="mb-8 relative z-10">
+                <h3 class="text-[#0054a8] font-bold text-lg flex items-center gap-2">🎟️ คำขอเข้าสวนน้ำ Vana Nava</h3>
+                <p class="text-slate-500 text-xs mt-1 ml-7">วันที่เข้า: <span class="font-bold text-slate-700">${visitDateStr}</span></p>
+            </div>
+            
+            <div class="relative w-full mx-auto mt-12 mb-2 px-2">
+                
+                <div class="absolute top-3 left-3 right-3 h-1.5 bg-slate-200 rounded-full z-0"></div>
+                <div class="absolute top-3 left-3 h-1.5 bg-[#27aae1] rounded-full z-0 transition-all duration-1000" style="width: ${progressPercent};"></div>
+                
+                <!-- Swimmer Animation -->
+                <div class="absolute top-[-22px] z-20 drop-shadow-md transition-all duration-1000" style="left: calc(${progressPercent} + 0px); margin-left: -12px;">
+                    <span class="text-3xl">🏊‍♂️</span>
+                </div>
+
+                <div class="flex justify-between relative z-10">
+                    <div class="flex flex-col items-center" style="width: 55px;">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md border-2" style="${cyanBg}">1</div>
+                        <div class="mt-2 text-[10px] font-bold text-center whitespace-nowrap" style="${cyanText}">ส่งคำขอ</div>
+                    </div>
+                    <div class="flex flex-col items-center" style="width: 55px;">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md border-2 transition-all duration-700 delay-300" style="${step2Active ? cyanBg : grayBg}">2</div>
+                        <div class="mt-2 text-[10px] font-bold text-center whitespace-nowrap transition-all duration-700 delay-300" style="${step2Active ? cyanText : grayText}">หน.อนุมัติ</div>
+                    </div>
+                    <div class="flex flex-col items-center" style="width: 55px;">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md border-2 transition-all duration-700 delay-500" style="${step3Active ? cyanBg : grayBg}">3</div>
+                        <div class="mt-2 text-[10px] font-bold text-center whitespace-nowrap transition-all duration-700 delay-500" style="${step3Active ? cyanText : grayText}">HR</div>
+                    </div>
+                    <div class="flex flex-col items-center" style="width: 55px;">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md border-2" style="${grayBg}">4</div>
+                        <div class="mt-2 text-[10px] font-bold text-center whitespace-nowrap" style="${grayText}">เข้าสวนน้ำ</div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    });
+    
+    if(html) {
+        trackingWidget.innerHTML = `<h2 class="text-lg font-black text-[#0054a8] mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-vana-pink rounded-full"></span> ติดตามสถานะล่าสุด</h2><div>${html}</div>`;
+        trackingWidget.classList.remove('hidden');
+    }
+}

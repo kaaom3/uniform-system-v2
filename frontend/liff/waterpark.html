@@ -115,6 +115,8 @@
         <div id="wp-latest-status-container" class="hidden mb-6"></div>
 
         <!-- Tab Navigation -->
+        <div id="wp-tracking-widget" class="hidden mb-6"></div>
+
         <div class="flex overflow-x-auto hide-scrollbars border-b border-[#27aae1]/30 mb-6" id="tabs-nav">
             <button onclick="switchTab('tab-booking')" class="tab-btn active px-4 py-3 whitespace-nowrap flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -193,11 +195,9 @@
                                 <label id="wp-freeform-label" class="block text-[11px] font-bold text-orange-600 mb-4 pr-8 uppercase tracking-widest"></label>
                                 <div class="space-y-4">
                                     <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 mb-1 ml-1 uppercase tracking-widest">แนบรูปถ่ายหน้าบัตร <span class="text-rose-500 normal-case ml-1 tracking-normal font-medium">(ขนาดไม่เกิน 2MB)</span></label>
+                                        <label class="block text-[10px] font-bold text-slate-600 mb-1 ml-1 uppercase tracking-widest">📸 ถ่ายรูปจากกล้อง / แนบรูปภาพ <span class="text-rose-500 normal-case ml-1 tracking-normal font-medium">(ขนาดไม่เกิน 2MB)</span></label>
                                         <input type="file" id="wp-guest-idcard" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-cyan-500/10 file:text-[#0054a8] hover:file:bg-cyan-500/20 cursor-pointer bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl transition-colors">
-                                        <button type="button" id="wp-guest-scan-btn" class="hidden w-full mt-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-[#0054a8] border border-cyan-500/30 font-bold py-2 px-3 rounded-xl transition-colors text-xs flex items-center justify-center gap-2">
-                                            🔍 สแกนข้อมูลจากรูป
-                                        </button>
+                                        
                                     </div>
                                     <div>
                                         <input type="text" id="wp-guest-idcard-no" maxlength="13" placeholder="เลขบัตรประจำตัวประชาชน 13 หลัก" class="w-full py-3 px-4 bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl text-sm text-slate-800 placeholder-slate-500 outline-none transition-all focus:ring-2 focus:ring-primary-500 font-mono shadow-sm">
@@ -249,10 +249,9 @@
                 <form id="wp-add-rel-form" class="space-y-4 mb-5 p-5 bg-white/60 border border-[#27aae1]/30 rounded-xl">
                     <div class="space-y-4">
                         <div>
+                            <label class="block text-[10px] font-bold text-slate-600 mb-1 ml-1 uppercase tracking-widest">📸 ถ่ายรูปจากกล้อง / แนบรูปภาพ</label>
                             <input type="file" id="wp-rel-idcard" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-cyan-500/20 file:text-[#0054a8] hover:file:bg-primary-200 cursor-pointer bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl transition-all">
-                            <button type="button" id="wp-rel-scan-btn" class="hidden w-full mt-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-[#0054a8] border border-cyan-500/30 font-bold py-2 px-3 rounded-xl transition-colors text-xs flex items-center justify-center gap-2">
-                                🔍 สแกนข้อมูลอัตโนมัติ
-                            </button>
+                            
                         </div>
                         <div>
                             <input type="text" id="wp-rel-idcard-no" maxlength="13" placeholder="เลขบัตรประชาชน 13 หลัก" class="w-full py-3 px-4 bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl focus:ring-2 focus:ring-primary-500 text-sm text-slate-800 placeholder-slate-500 outline-none font-mono shadow-sm transition-all">
