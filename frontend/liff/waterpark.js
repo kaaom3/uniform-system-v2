@@ -103,6 +103,7 @@ async function loadWaterparkDashboard() {
         
         renderLatestStatus(data.allBookings);
         renderHistory(data.allBookings);
+        renderWaterparkTrackerWidget();
 
     } catch (error) {
         showNotification(error.message, 'error');
