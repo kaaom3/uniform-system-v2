@@ -42,6 +42,9 @@ app.use('/api/waterpark', waterparkRoutes);
 // เปิดใช้งาน API ของระบบ LIFF
 app.use('/api/liff', liffRoutes);
 
+// เส้นทางสำหรับปลุกเซิร์ฟเวอร์ (Keep Awake)
+app.get('/api/ping', (req, res) => res.json({ status: 'ok', message: 'Server is awake' }));
+
 // ==========================================
 // ☁️ CLOUDINARY CONFIG
 // ==========================================
