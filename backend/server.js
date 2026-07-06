@@ -318,7 +318,7 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
         const buffer = fs.readFileSync(req.file.path);
         let content = buffer.toString('utf8');
-        if (content.includes('')) {
+        if (content.includes('\uFFFD')) {
             content = iconv.decode(buffer, 'win874');
         } else {
             content = content.replace(/^\uFEFF/, '');
@@ -348,7 +348,7 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
         
         const buffer = fs.readFileSync(req.file.path);
         let content = buffer.toString('utf8');
-        if (content.includes('')) {
+        if (content.includes('\uFFFD')) {
             content = iconv.decode(buffer, 'win874');
         } else {
             content = content.replace(/^\uFEFF/, '');
