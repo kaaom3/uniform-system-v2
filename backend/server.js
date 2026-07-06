@@ -330,7 +330,7 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
             if (!lines[i].trim()) continue;
             const [username, password, name, department, role, status] = lines[i].split(',');
             if (username && password && name) {
-                const exist = await User.findOne({ username: username.trim() });
+                const exist = await User.findOne({ username: { $regex: new RegExp('^' + username.trim() + '$', 'i') } });
                 if (!exist) {
                     await new User({ username: username.trim(), password: password.trim(), name: name.trim(), department: department ? department.trim() : '-', role: role ? role.trim() : 'user', status: status ? status.trim() : 'active', mustChangePassword: true }).save();
                     importedCount++;
@@ -396,7 +396,7 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
 
         let importedCount = 0;
         for (const data of parsedData) {
-            const user = await User.findOne({ username: data.username });
+            const user = await User.findOne({ username: { $regex: new RegExp('^' + data.username + '$', 'i') } });
             if (user) {
                 const newReq = new Request({
                     requestId: generateRequestId(),
