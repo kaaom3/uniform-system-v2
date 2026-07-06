@@ -324,13 +324,13 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
             content = content.replace(/^\uFEFF/, '');
         }
         
-        const lines = content.split(/\r?\n/);
+        const lines = content.split(/\r\n|\n|\r/);
         let importedCount = 0;
         for(let i = 1; i < lines.length; i++) {
             if (!lines[i].trim()) continue;
             const [username, password, name, department, role, status] = lines[i].split(',');
             if (username && password && name) {
-                const exist = await User.findOne({ username: { $regex: new RegExp('^' + username.trim() + '$', 'i') } });
+                const exist = await User.findOne({ username: { $regex: '^' + username.trim() + '$', $options: 'i' } });
                 if (!exist) {
                     await new User({ username: username.trim(), password: password.trim(), name: name.trim(), department: department ? department.trim() : '-', role: role ? role.trim() : 'user', status: status ? status.trim() : 'active', mustChangePassword: true }).save();
                     importedCount++;
@@ -443,7 +443,7 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
             content = content.replace(/^\uFEFF/, '');
         }
         
-        const lines = content.split(/\r?\n/);
+        const lines = content.split(/\r\n|\n|\r/);
         const parsedData = [];
         const requiredStock = {};
         
@@ -485,7 +485,7 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
 
         let importedCount = 0;
         for (const data of parsedData) {
-            const user = await User.findOne({ username: { $regex: new RegExp('^' + data.username + '$', 'i') } });
+            const user = await User.findOne({ username: { $regex: '^' + data.username + '$', $options: 'i' } });
             if (user) {
                 const newReq = new Request({
                     requestId: generateRequestId(),
@@ -520,7 +520,10 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
         }
         
         fs.unlinkSync(req.file.path); 
-        res.json({ success: true, count: importedCount });
+        if (importedCount === 0) {
+            console.log("CSV Debug: parsedData=", parsedData.length, "lines=", lines.length, "firstLine=", lines[0], "secondLine=", lines[1]);
+        }
+        res.json({ success: true, count: importedCount, debugLines: lines.length, debugParsed: parsedData.length });
     } catch (err) { 
         console.error("Import Requests Error:", err);
         res.status(500).json({ error: "เกิดข้อผิดพลาดในการประมวลผลไฟล์ CSV" }); 
