@@ -1609,7 +1609,7 @@ async function handleImportRequestsCSV() {
 }
 
 function initImportRequestsUI() { 
-    document.getElementById('import-requests-btn')?.addEventListener('click', handleImportRequestsCSV); 
+    document.getElementById('csv-requests-input')?.addEventListener('change', handleImportRequestsCSV); 
 }
 
 function onUsersReceived(users) { 
@@ -3301,8 +3301,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     showNotification(msg, 'success');
                 }
                 closeBulkAssignModal();
-                loadHistoryData();
-                loadStockData();
+                if (typeof loadAdminData === 'function') {
+                    loadAdminData();
+                } else if (typeof window.loadAdminData === 'function') {
+                    window.loadAdminData();
+                }
             }
         } catch (err) {
             showNotification(err.message, 'error');
