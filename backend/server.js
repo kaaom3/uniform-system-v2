@@ -317,11 +317,11 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
         const buffer = fs.readFileSync(req.file.path);
-        let content = '';
-        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
-            content = buffer.toString('utf8').replace(/^\uFEFF/, '');
+        let content = buffer.toString('utf8');
+        if (content.includes('')) {
+            content = iconv.decode(buffer, 'win874');
         } else {
-            content = iconv.decode(buffer, 'win874'); 
+            content = content.replace(/^\uFEFF/, '');
         }
         
         const lines = content.split(/\r?\n/);
@@ -347,11 +347,11 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });
         
         const buffer = fs.readFileSync(req.file.path);
-        let content = '';
-        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
-            content = buffer.toString('utf8').replace(/^\uFEFF/, '');
-        } else {
+        let content = buffer.toString('utf8');
+        if (content.includes('')) {
             content = iconv.decode(buffer, 'win874');
+        } else {
+            content = content.replace(/^\uFEFF/, '');
         }
         
         const lines = content.split(/\r?\n/);
