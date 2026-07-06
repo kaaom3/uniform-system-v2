@@ -3171,16 +3171,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadBulkAssignData() {
         try {
-            const baseUrl = window.API_BASE_URL || '';
             // Load Users
-            const userRes = await fetch(baseUrl + '/api/users');
+            const userRes = await fetch(`${API_BASE_URL}/api/users`);
             if (userRes.ok) {
                 bulkAllUsers = await userRes.json();
                 renderBulkUsers();
             }
 
             // Load Stock for dropdowns
-            const stockRes = await fetch(baseUrl + '/api/stock');
+            const stockRes = await fetch(`${API_BASE_URL}/api/stock`);
             if (stockRes.ok) {
                 bulkCurrentStock = await stockRes.json();
                 const typeSelect = document.getElementById('bulk-item-type');
@@ -3281,8 +3280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
 
         try {
-            const baseUrl = window.API_BASE_URL || '';
-            const res = await fetch(baseUrl + '/api/requests/bulk-assign', {
+            const res = await fetch(`${API_BASE_URL}/api/requests/bulk-assign`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
