@@ -308,6 +308,9 @@
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                         <h3 class="text-2xl font-bold text-slate-800">ประวัติและการทำงาน</h3>
                         <div class="flex gap-3 w-full sm:w-auto">
+                            <button onclick="openBulkAssignModal()" class="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-all text-sm flex items-center justify-center gap-2 btn-press">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>แจกจ่ายแบบกลุ่ม
+                            </button>
                             <button id="export-history-btn" class="flex-1 sm:flex-none bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-bold py-2 px-4 rounded-lg text-sm transition-colors flex items-center justify-center gap-2">Export CSV</button>
                         </div>
                     </div>
@@ -550,6 +553,87 @@
                 <button type="button" id="save-user-btn" class="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2 btn-press">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                     บันทึกข้อมูล
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- Bulk Assign Modal -->
+    <div id="bulk-assign-modal" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex justify-center items-center backdrop-blur-sm px-4">
+        <div class="bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50/50 rounded-t-2xl">
+                <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2"><svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>แจกจ่ายพัสดุแบบกลุ่ม (Bulk Assign)</h3>
+                <button onclick="closeBulkAssignModal()" class="text-slate-400 hover:text-red-500 transition-colors p-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Left: Select Users -->
+                    <div class="flex flex-col gap-3">
+                        <div class="flex justify-between items-center">
+                            <label class="block text-sm font-bold text-slate-700">เลือกพนักงานที่จะแจก</label>
+                            <div class="flex bg-slate-100 rounded-lg p-1">
+                                <button id="bulk-tab-paste" onclick="switchBulkTab('paste')" class="px-3 py-1 text-xs font-bold rounded bg-white text-indigo-600 shadow-sm transition-all">วางรหัส</button>
+                                <button id="bulk-tab-check" onclick="switchBulkTab('check')" class="px-3 py-1 text-xs font-bold rounded text-slate-500 hover:text-slate-700 transition-all">ติ๊กเลือก</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Mode: Paste -->
+                        <div id="bulk-mode-paste" class="flex flex-col h-64">
+                            <p class="text-xs text-slate-500 mb-2">คัดลอกรหัสพนักงานจาก Excel มาวางได้เลย (บรรทัดละ 1 คน หรือคั่นด้วยลูกน้ำ)</p>
+                            <textarea id="bulk-usernames-textarea" class="w-full flex-1 border border-slate-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-mono" placeholder="EMP001&#10;EMP002&#10;EMP003"></textarea>
+                        </div>
+
+                        <!-- Mode: Checkbox -->
+                        <div id="bulk-mode-check" class="flex flex-col h-64 hidden">
+                            <input type="text" id="bulk-user-search" oninput="filterBulkUsers()" placeholder="ค้นหาชื่อ หรือ รหัสพนักงาน..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm mb-3 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <div class="flex justify-between items-center mb-2 px-1">
+                                <span class="text-xs font-bold text-slate-500">เลือก <span id="bulk-selected-count" class="text-indigo-600">0</span> คน</span>
+                                <button onclick="toggleBulkSelectAll()" class="text-xs text-indigo-600 font-bold hover:underline">เลือกทั้งหมดบนหน้า/ล้าง</button>
+                            </div>
+                            <div id="bulk-user-list" class="flex-1 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50 p-2 space-y-1">
+                                <!-- User checkboxes generated here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Item Details -->
+                    <div class="flex flex-col gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label class="block text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">ข้อมูลพัสดุที่จะแจก</label>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">ประเภทพัสดุ</label>
+                            <select id="bulk-item-type" onchange="updateBulkSizes()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                                <option value="">-- โหลดข้อมูล --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">ไซส์</label>
+                            <select id="bulk-item-size" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white disabled:bg-slate-100" disabled>
+                                <option value="">-- เลือกประเภทพัสดุก่อน --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">สภาพพัสดุ</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors bg-white">
+                                    <input type="radio" name="bulk-condition" value="New" checked class="text-indigo-600 focus:ring-indigo-500">
+                                    <span class="text-sm font-semibold text-slate-700">ของใหม่ (New)</span>
+                                </label>
+                                <label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors bg-white">
+                                    <input type="radio" name="bulk-condition" value="Used" class="text-indigo-600 focus:ring-indigo-500">
+                                    <span class="text-sm font-semibold text-slate-700">มือสอง (Used)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">จำนวนแจก (ต่อ 1 คน)</label>
+                            <input type="number" id="bulk-quantity" min="1" value="1" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-2xl">
+                <button onclick="closeBulkAssignModal()" class="px-6 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">ยกเลิก</button>
+                <button id="bulk-submit-btn" onclick="submitBulkAssign()" class="px-6 py-2.5 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg transition-all flex items-center gap-2 btn-press">
+                    แจกจ่าย และ ตัดสต๊อก
                 </button>
             </div>
         </div>

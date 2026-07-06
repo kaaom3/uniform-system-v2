@@ -342,6 +342,95 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
     } catch (err) { res.status(500).json({ error: "รูปแบบไฟล์ CSV ไม่ถูกต้อง" }); }
 });
 
+app.post('/api/requests/bulk-assign', async (req, res) => {
+    try {
+        const { usernames, itemType, size, condition, quantityPerUser, adminUser } = req.body;
+        
+        if (!usernames || !Array.isArray(usernames) || usernames.length === 0) {
+            return res.status(400).json({ error: "กรุณาระบุรายชื่อพนักงานอย่างน้อย 1 คน" });
+        }
+        if (!itemType || !size || !condition || !quantityPerUser) {
+            return res.status(400).json({ error: "กรุณาระบุข้อมูลพัสดุให้ครบถ้วน" });
+        }
+
+        const qtyPerUser = parseInt(quantityPerUser);
+        if (isNaN(qtyPerUser) || qtyPerUser <= 0) {
+            return res.status(400).json({ error: "จำนวนพัสดุต้องมากกว่า 0" });
+        }
+
+        // ค้นหาพนักงานทั้งหมดที่อยู่ในรายชื่อ (Case-insensitive)
+        const matchedUsers = [];
+        const missingUsernames = [];
+        
+        for (const un of usernames) {
+            const user = await User.findOne({ username: { $regex: new RegExp('^' + un.trim() + '$', 'i') } });
+            if (user) {
+                matchedUsers.push(user);
+            } else {
+                missingUsernames.push(un);
+            }
+        }
+
+        if (matchedUsers.length === 0) {
+            return res.status(400).json({ error: "ไม่พบข้อมูลพนักงานทั้งหมดในระบบ" });
+        }
+
+        const totalQtyNeeded = matchedUsers.length * qtyPerUser;
+        const reqCondition = (condition.trim().toUpperCase() === 'USED') ? 'Used' : 'New';
+
+        // เช็คสต๊อก
+        const stock = await Stock.findOne({ itemType: itemType.trim(), size: size.trim() });
+        if (!stock) {
+            return res.status(400).json({ error: `ไม่พบพัสดุ: ${itemType} (ไซส์ ${size}) ในระบบ` });
+        }
+
+        if (reqCondition === 'Used' && stock.usedStock < totalQtyNeeded) {
+            return res.status(400).json({ error: `พัสดุมือสองไม่เพียงพอ! ต้องการ ${totalQtyNeeded} ชิ้น แต่มีแค่ ${stock.usedStock} ชิ้น` });
+        } else if (reqCondition === 'New' && stock.newStock < totalQtyNeeded) {
+            return res.status(400).json({ error: `พัสดุของใหม่ไม่เพียงพอ! ต้องการ ${totalQtyNeeded} ชิ้น แต่มีแค่ ${stock.newStock} ชิ้น` });
+        }
+
+        // หักสต๊อก 1 ครั้งสำหรับทั้งหมดรวมกัน
+        if (reqCondition === 'Used') stock.usedStock = Math.max(0, stock.usedStock - totalQtyNeeded);
+        else stock.newStock = Math.max(0, stock.newStock - totalQtyNeeded);
+        await stock.save();
+
+        // บันทึก Log การหักสต๊อก 1 รายการรวม
+        await new StockTransaction({
+            itemType: itemType.trim(),
+            size: size.trim(),
+            transactionType: reqCondition === 'Used' ? 'OUT-USED' : 'OUT',
+            quantity: -Math.abs(totalQtyNeeded),
+            reason: `แจกจ่ายแบบกลุ่มให้ ${matchedUsers.length} คน (คนละ ${qtyPerUser})`,
+            adminUser: adminUser || 'Admin'
+        }).save();
+
+        // สร้างประวัติเบิกให้แต่ละคน
+        for (const user of matchedUsers) {
+            const newReq = new Request({
+                requestId: generateRequestId(),
+                requesterName: user.name,
+                department: user.department || '-',
+                itemType: itemType.trim(),
+                size: size.trim(),
+                quantity: qtyPerUser,
+                reason: 'แจกจ่ายแบบกลุ่มจาก Admin',
+                status: 'Approved',
+                notes: `นำเข้าอัตโนมัติ (${reqCondition === 'Used' ? 'มือสอง' : 'ของใหม่'})`
+            });
+            await newReq.save();
+        }
+
+        res.json({ 
+            success: true, 
+            importedCount: matchedUsers.length,
+            missingUsers: missingUsernames
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ CSV" });

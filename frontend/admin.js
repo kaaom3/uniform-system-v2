@@ -3125,4 +3125,190 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.innerText = originalText;
         }
     });
+
+    // ==========================================
+    // BULK ASSIGN SYSTEM
+    // ==========================================
+    let bulkAllUsers = [];
+    let bulkCurrentStock = [];
+
+    window.openBulkAssignModal = async function() {
+        document.getElementById('bulk-assign-modal').classList.remove('hidden');
+        await loadBulkAssignData();
+        switchBulkTab('paste');
+    };
+
+    window.closeBulkAssignModal = function() {
+        document.getElementById('bulk-assign-modal').classList.add('hidden');
+        document.getElementById('bulk-usernames-textarea').value = '';
+        document.getElementById('bulk-user-search').value = '';
+        document.getElementById('bulk-item-type').value = '';
+        document.getElementById('bulk-item-size').value = '';
+        document.getElementById('bulk-item-size').disabled = true;
+        document.getElementById('bulk-quantity').value = '1';
+        document.querySelector('input[name="bulk-condition"][value="New"]').checked = true;
+        updateBulkSelectedCount();
+    };
+
+    window.switchBulkTab = function(tab) {
+        if (tab === 'paste') {
+            document.getElementById('bulk-mode-paste').classList.remove('hidden');
+            document.getElementById('bulk-mode-check').classList.add('hidden');
+            document.getElementById('bulk-tab-paste').classList.replace('text-slate-500', 'text-indigo-600');
+            document.getElementById('bulk-tab-paste').classList.add('bg-white', 'shadow-sm');
+            document.getElementById('bulk-tab-check').classList.replace('text-indigo-600', 'text-slate-500');
+            document.getElementById('bulk-tab-check').classList.remove('bg-white', 'shadow-sm');
+        } else {
+            document.getElementById('bulk-mode-paste').classList.add('hidden');
+            document.getElementById('bulk-mode-check').classList.remove('hidden');
+            document.getElementById('bulk-tab-check').classList.replace('text-slate-500', 'text-indigo-600');
+            document.getElementById('bulk-tab-check').classList.add('bg-white', 'shadow-sm');
+            document.getElementById('bulk-tab-paste').classList.replace('text-indigo-600', 'text-slate-500');
+            document.getElementById('bulk-tab-paste').classList.remove('bg-white', 'shadow-sm');
+            renderBulkUsers();
+        }
+    };
+
+    async function loadBulkAssignData() {
+        try {
+            // Load Users
+            const userRes = await fetch('/api/users');
+            if (userRes.ok) {
+                bulkAllUsers = await userRes.json();
+                renderBulkUsers();
+            }
+
+            // Load Stock for dropdowns
+            const stockRes = await fetch('/api/stock');
+            if (stockRes.ok) {
+                bulkCurrentStock = await stockRes.json();
+                const typeSelect = document.getElementById('bulk-item-type');
+                const types = [...new Set(bulkCurrentStock.map(s => s.itemType))];
+                typeSelect.innerHTML = '<option value="">-- เลือกประเภทพัสดุ --</option>' + 
+                    types.map(t => `<option value="${t}">${t}</option>`).join('');
+            }
+        } catch (err) {
+            console.error("Failed to load bulk data:", err);
+            showNotification("ไม่สามารถดึงข้อมูลพื้นฐานได้", "error");
+        }
+    }
+
+    window.updateBulkSizes = function() {
+        const type = document.getElementById('bulk-item-type').value;
+        const sizeSelect = document.getElementById('bulk-item-size');
+        if (!type) {
+            sizeSelect.innerHTML = '<option value="">-- เลือกประเภทพัสดุก่อน --</option>';
+            sizeSelect.disabled = true;
+            return;
+        }
+
+        const sizes = bulkCurrentStock.filter(s => s.itemType === type).map(s => s.size);
+        sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('');
+        sizeSelect.disabled = false;
+    };
+
+    window.renderBulkUsers = function() {
+        const query = document.getElementById('bulk-user-search').value.toLowerCase();
+        const listDiv = document.getElementById('bulk-user-list');
+        listDiv.innerHTML = '';
+        
+        const filtered = bulkAllUsers.filter(u => 
+            u.username.toLowerCase().includes(query) || 
+            u.name.toLowerCase().includes(query)
+        );
+
+        filtered.forEach(u => {
+            const label = document.createElement('label');
+            label.className = "flex items-center gap-3 p-2 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-indigo-100 bulk-user-label";
+            label.innerHTML = `
+                <input type="checkbox" value="${u.username}" class="bulk-user-cb w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" onchange="updateBulkSelectedCount()">
+                <div>
+                    <p class="text-sm font-bold text-slate-700">${u.name}</p>
+                    <p class="text-xs text-slate-500">${u.username} • ${u.department}</p>
+                </div>
+            `;
+            listDiv.appendChild(label);
+        });
+        updateBulkSelectedCount();
+    };
+
+    window.filterBulkUsers = function() {
+        renderBulkUsers();
+    };
+
+    window.toggleBulkSelectAll = function() {
+        const cbs = document.querySelectorAll('.bulk-user-cb');
+        if (cbs.length === 0) return;
+        const allChecked = Array.from(cbs).every(cb => cb.checked);
+        cbs.forEach(cb => cb.checked = !allChecked);
+        updateBulkSelectedCount();
+    };
+
+    window.updateBulkSelectedCount = function() {
+        const cbs = document.querySelectorAll('.bulk-user-cb:checked');
+        document.getElementById('bulk-selected-count').innerText = cbs.length;
+    };
+
+    window.submitBulkAssign = async function() {
+        const btn = document.getElementById('bulk-submit-btn');
+        let usernames = [];
+
+        // Determine which tab is active
+        const isPasteMode = !document.getElementById('bulk-mode-paste').classList.contains('hidden');
+        if (isPasteMode) {
+            const text = document.getElementById('bulk-usernames-textarea').value;
+            usernames = text.split(/[,\n]/).map(u => u.trim()).filter(u => u);
+        } else {
+            const cbs = document.querySelectorAll('.bulk-user-cb:checked');
+            usernames = Array.from(cbs).map(cb => cb.value);
+        }
+
+        if (usernames.length === 0) return showNotification("กรุณาระบุรายชื่อพนักงาน", "error");
+
+        const itemType = document.getElementById('bulk-item-type').value;
+        const size = document.getElementById('bulk-item-size').value;
+        const condition = document.querySelector('input[name="bulk-condition"]:checked').value;
+        const qty = parseInt(document.getElementById('bulk-quantity').value);
+
+        if (!itemType || !size || !qty || qty <= 0) {
+            return showNotification("กรุณาระบุข้อมูลพัสดุให้ถูกต้อง", "error");
+        }
+
+        if (!confirm(`ยืนยันแจกจ่ายพัสดุให้พนักงานทั้งหมด ${usernames.length} คน?`)) return;
+
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>กำลังประมวลผล...`;
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/requests/bulk-assign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    usernames, itemType, size, condition, quantityPerUser: qty,
+                    adminUser: document.getElementById('admin-display-name')?.innerText || 'Admin'
+                })
+            });
+            const data = await res.json();
+            
+            if (!res.ok) {
+                showNotification(data.error, 'error');
+            } else {
+                let msg = `แจกจ่ายสำเร็จ ${data.importedCount} คน`;
+                if (data.missingUsers && data.missingUsers.length > 0) {
+                    msg += `\n(ไม่พบผู้ใช้ ${data.missingUsers.length} คน: ${data.missingUsers.slice(0,3).join(', ')}...)`;
+                    alert(msg);
+                } else {
+                    showNotification(msg, 'success');
+                }
+                closeBulkAssignModal();
+                loadHistoryData();
+                loadStockData();
+            }
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally {
+            btn.innerHTML = `แจกจ่าย และ ตัดสต๊อก`;
+            btn.disabled = false;
+        }
+    };
 });
