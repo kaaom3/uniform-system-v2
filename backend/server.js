@@ -326,9 +326,18 @@ app.post('/api/users/import', csvUpload.single('csvfile'), async (req, res) => {
         
         const lines = content.split(/\r\n|\n|\r/);
         let importedCount = 0;
-        for(let i = 1; i < lines.length; i++) {
-            if (!lines[i].trim()) continue;
-            const [username, password, name, department, role, status] = lines[i].split(',');
+        for(let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+            if (!line) continue;
+            
+            // ข้ามบรรทัดที่บอก sep= หรือ บรรทัดหัวตาราง (Header)
+            if (line.toLowerCase().startsWith('sep=')) continue;
+            if (line.toLowerCase().includes('username') && line.toLowerCase().includes('password')) continue;
+            if (line.toLowerCase().includes('รหัสพนักงาน') && line.toLowerCase().includes('รหัสผ่าน')) continue;
+
+            // รองรับทั้ง Comma (,) และ Semicolon (;)
+            const delimiter = line.includes(';') ? ';' : ',';
+            const [username, password, name, department, role, status] = line.split(delimiter);
             if (username && password && name) {
                 const exist = await User.findOne({ username: { $regex: '^' + username.trim() + '$', $options: 'i' } });
                 if (!exist) {
@@ -447,9 +456,18 @@ app.post('/api/requests/import', csvUpload.single('csvfile'), async (req, res) =
         const parsedData = [];
         const requiredStock = {};
         
-        for(let i = 1; i < lines.length; i++) { 
-            if (!lines[i].trim()) continue;
-            const [username, itemType, size, quantityStr, condition] = lines[i].split(',');
+        for(let i = 0; i < lines.length; i++) { 
+            let line = lines[i].trim();
+            if (!line) continue;
+            
+            // ข้ามบรรทัดที่บอก sep= หรือ บรรทัดหัวตาราง (Header)
+            if (line.toLowerCase().startsWith('sep=')) continue;
+            if (line.toLowerCase().includes('username') && line.toLowerCase().includes('itemtype')) continue;
+            if (line.toLowerCase().includes('รหัสพนักงาน') && line.toLowerCase().includes('ประเภทพัสดุ')) continue;
+
+            // รองรับทั้ง Comma (,) และ Semicolon (;)
+            const delimiter = line.includes(';') ? ';' : ',';
+            const [username, itemType, size, quantityStr, condition] = line.split(delimiter);
             if (username && itemType && size && quantityStr) {
                 const qty = parseInt(quantityStr.trim()) || 1;
                 const reqCondition = (condition && condition.trim().toUpperCase() === 'USED') ? 'Used' : 'New';
