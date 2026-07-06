@@ -1599,11 +1599,20 @@ async function handleImportRequestsCSV() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/requests/import`, { method: 'POST', body: formData });
         const text = await response.text(); 
+        let result;
         try {
-            const result = JSON.parse(text);
-            if(result.success) { showNotification(`นำเข้าข้อมูลสำเร็จ ${result.count} รายการ`, 'success'); refreshData(); } 
-            else { throw new Error(result.error); }
-        } catch(err) { console.error("Server Error:", text); throw new Error('เซิร์ฟเวอร์ขัดข้อง (ไฟล์อาจมีปัญหา หรือ API ผิดพลาด)'); }
+            result = JSON.parse(text);
+        } catch (e) {
+            console.error("Server Error:", text);
+            throw new Error('เซิร์ฟเวอร์ขัดข้อง (ไฟล์อาจมีปัญหา หรือ API ผิดพลาด)');
+        }
+        if (result.success) {
+            showNotification(`นำเข้าข้อมูลสำเร็จ ${result.count} รายการ`, 'success');
+            if (typeof loadAdminData === 'function') loadAdminData();
+            else if (typeof refreshData === 'function') refreshData();
+        } else {
+            throw new Error(result.error || 'เกิดข้อผิดพลาดในการนำเข้า');
+        }
     } catch(e) { showNotification(e.message, 'error'); } 
     finally { showLoadingButton(btn, false, 'นำเข้าข้อมูล'); if(fileInput) fileInput.value = ''; btn.dataset.isProcessing = 'false'; btn.disabled = false; }
 }
