@@ -230,11 +230,16 @@
                             </button>
                         </div>
                     </div>
-                    <div id="low-stock-alert-banner" class="hidden mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+                    <div id="low-stock-alert-banner" class="hidden mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm relative">
                         <span class="text-2xl text-red-500">🚨</span>
                         <div class="flex-1">
-                            <h4 class="font-bold text-red-800 text-sm mb-1">แจ้งเตือน: มีพัสดุใกล้หมดสต๊อก!</h4>
-                            <ul id="low-stock-alert-list" class="text-xs text-red-700 list-disc pl-4 space-y-0.5"></ul>
+                            <div class="flex justify-between items-center mb-1 cursor-pointer" onclick="document.getElementById('low-stock-alert-list-container').classList.toggle('hidden')">
+                                <h4 class="font-bold text-red-800 text-sm">แจ้งเตือน: มีพัสดุใกล้หมดสต๊อก!</h4>
+                                <button class="text-xs font-bold text-red-600 hover:text-red-800 flex items-center gap-1">ซ่อน/แสดง</button>
+                            </div>
+                            <div id="low-stock-alert-list-container">
+                                <ul id="low-stock-alert-list" class="text-xs text-red-700 list-disc pl-4 space-y-0.5"></ul>
+                            </div>
                         </div>
                     </div>
                     <div id="stock-summary-container"></div>
