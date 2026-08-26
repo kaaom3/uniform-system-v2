@@ -1803,7 +1803,8 @@ function populateUserForm(username) {
         if(document.getElementById('user-form-is-head')) document.getElementById('user-form-is-head').checked = user.isHeadApprover === true;
         if(document.getElementById('user-form-reg-unlocked')) document.getElementById('user-form-reg-unlocked').checked = user.waterparkRegUnlocked === true;
         
-        document.getElementById('user-form-username').disabled = true; // Disable username on edit
+        // อนุญาตให้แก้ไข Username ได้แล้ว
+        document.getElementById('user-form-username').disabled = false;
         AppState.currentEditUser = user.username; 
         
         const modalTitle = document.getElementById('user-modal-title');

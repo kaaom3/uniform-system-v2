@@ -203,10 +203,22 @@ app.post('/api/users', async (req, res) => {
         const { userData, adminUser, originalUsername } = req.body;
         
         if (originalUsername) {
+            const originalUser = await User.findOne({ username: originalUsername });
+            if (!originalUser) return res.status(404).json({ error: 'ไม่พบผู้ใช้งานต้นฉบับ' });
+            
             if (originalUsername !== userData.username) {
                 const duplicate = await User.findOne({ username: userData.username });
                 if (duplicate) return res.status(400).json({ error: 'Username นี้มีผู้ใช้งานแล้ว' });
             }
+            
+            // หากเปลี่ยนชื่อ-สกุล ให้ไปอัปเดตประวัติการเบิกด้วย
+            if (originalUser.name !== userData.name || originalUser.department !== userData.department) {
+                await Request.updateMany(
+                    { requesterName: originalUser.name },
+                    { $set: { requesterName: userData.name, department: userData.department } }
+                );
+            }
+            
             await User.findOneAndUpdate({ username: originalUsername }, userData);
             await logAdminAction(adminUser, 'User Management', `อัปเดตข้อมูลผู้ใช้: ${originalUsername} -> ${userData.username}`);
             return res.json({ success: true });
