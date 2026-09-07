@@ -243,6 +243,8 @@ async function loadAdminData() {
             AppState.allRequestsData = allReqs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             renderAllHistoryTable(); 
             initImportRequestsUI();
+            
+            await loadStockReport();
         }
         loadWaterparkApprovals();
     } catch (error) { 
@@ -3325,3 +3327,90 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 });
+
+// ============================================================================
+// 📊 STOCK REPORTS
+// ============================================================================
+let currentStockReportData = [];
+
+async function loadStockReport() {
+    try {
+        const report = await apiCall('/api/reports/stock');
+        currentStockReportData = report;
+        renderStockReport();
+    } catch (e) {
+        console.error('Error loading stock report:', e);
+        document.getElementById('stock-report-table-body').innerHTML = `<tr><td colspan="4" class="text-center py-10 text-red-500">โหลดข้อมูลรายงานล้มเหลว</td></tr>`;
+    }
+}
+
+function renderStockReport() {
+    const tbody = document.getElementById('stock-report-table-body');
+    if (!tbody) return;
+
+    if (currentStockReportData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-slate-400">ไม่มีข้อมูลคลังพัสดุ</td></tr>`;
+        return;
+    }
+
+    let html = '';
+    currentStockReportData.forEach(cat => {
+        // Category Header Row
+        html += `<tr class="bg-indigo-50/50 border-y border-indigo-100">
+            <td colspan="4" class="px-4 py-3 font-black text-indigo-700 text-sm">📦 หมวดหมู่: ${cat.category}</td>
+        </tr>`;
+
+        cat.items.forEach(item => {
+            let isFirstItemRow = true;
+            item.sizes.forEach(sizeInfo => {
+                html += `<tr class="hover:bg-slate-50 transition-colors">
+                    <td class="p-4 border-b border-slate-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 text-right"><span class="font-bold text-slate-700 text-sm">${sizeInfo.size}</span></div>
+                            <div class="text-sm ${isFirstItemRow ? 'font-bold text-slate-800' : 'text-slate-500'}">${isFirstItemRow ? item.itemType : ''}</div>
+                        </div>
+                    </td>
+                    <td class="p-4 border-b border-slate-100 text-center font-bold text-emerald-600">${sizeInfo.totalIn}</td>
+                    <td class="p-4 border-b border-slate-100 text-center font-bold text-rose-500">${sizeInfo.totalOut}</td>
+                    <td class="p-4 border-b border-slate-100 text-center font-black text-slate-800 text-lg">${sizeInfo.balance}</td>
+                </tr>`;
+                isFirstItemRow = false;
+            });
+        });
+    });
+
+    tbody.innerHTML = html;
+}
+
+function exportStockReportCSV() {
+    if (currentStockReportData.length === 0) return showNotification('ไม่มีข้อมูลสำหรับส่งออก', 'error');
+    
+    let csvContent = '\uFEFF'; // BOM for Excel Thai support
+    csvContent += 'หมวดหมู่,พัสดุ,ไซส์,รับเข้า (ของใหม่),ใช้ไป (ของใหม่),คงเหลือ\n';
+
+    currentStockReportData.forEach(cat => {
+        cat.items.forEach(item => {
+            item.sizes.forEach(sizeInfo => {
+                const safeCat = `"${cat.category.replace(/"/g, '""')}"`;
+                const safeItem = `"${item.itemType.replace(/"/g, '""')}"`;
+                const safeSize = `"${sizeInfo.size.replace(/"/g, '""')}"`;
+                csvContent += `${safeCat},${safeItem},${safeSize},${sizeInfo.totalIn},${sizeInfo.totalOut},${sizeInfo.balance}\n`;
+            });
+        });
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `StockReport_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Attach listener when DOM loads or script runs
+setTimeout(() => {
+    const exportBtn = document.getElementById('export-stock-report-btn');
+    if (exportBtn) exportBtn.addEventListener('click', exportStockReportCSV);
+}, 1000);

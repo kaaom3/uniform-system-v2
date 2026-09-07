@@ -717,6 +717,66 @@ app.get('/api/stock/history', async (req, res) => {
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/reports/stock', async (req, res) => {
+    try {
+        const stocks = await Stock.find().lean();
+        const transactions = await StockTransaction.find({
+            transactionType: { $in: ['IN', 'OUT', 'ADJUST'] }
+        }).lean();
+
+        // 1. Map transactions
+        const stats = {};
+        transactions.forEach(tx => {
+            // นับเฉพาะ IN, OUT ธรรมดา (ซึ่งเป็นของใหม่) หรือ ADJUST ที่มีคำว่า (ของใหม่)
+            if (tx.transactionType === 'ADJUST' && !tx.reason.includes('(ของใหม่)')) {
+                return; // ข้ามถ้าเป็นปรับปรุงมือสองหรือชำรุด
+            }
+
+            const key = `${tx.itemType}|${tx.size}`;
+            if (!stats[key]) stats[key] = { totalIn: 0, totalOut: 0 };
+
+            if (tx.quantity > 0) {
+                stats[key].totalIn += tx.quantity;
+            } else {
+                stats[key].totalOut += Math.abs(tx.quantity);
+            }
+        });
+
+        // 2. Group by Category -> ItemType -> Size
+        const report = [];
+        const categoryMap = {};
+
+        stocks.forEach(stock => {
+            const cat = stock.category || 'ไม่ระบุหมวดหมู่';
+            if (!categoryMap[cat]) categoryMap[cat] = { category: cat, items: [] };
+
+            let itemEntry = categoryMap[cat].items.find(i => i.itemType === stock.itemType);
+            if (!itemEntry) {
+                itemEntry = { itemType: stock.itemType, sizes: [] };
+                categoryMap[cat].items.push(itemEntry);
+            }
+
+            const key = `${stock.itemType}|${stock.size}`;
+            itemEntry.sizes.push({
+                size: stock.size,
+                totalIn: stats[key]?.totalIn || 0,
+                totalOut: stats[key]?.totalOut || 0,
+                balance: stock.newStock
+            });
+        });
+
+        // Convert object map to array
+        for (const cat in categoryMap) {
+            report.push(categoryMap[cat]);
+        }
+
+        res.json(report);
+    } catch (err) {
+        console.error('Stock Report Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ==========================================
 // 🛒 REQUESTS (การเบิก-คืน ยูนิฟอร์ม)
 // ==========================================

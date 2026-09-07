@@ -1,0 +1,10 @@
+- `[x]` 1. สร้าง API Endpoint `GET /api/reports/stock` ใน `server.js`
+  - `[x]` 1.1 ค้นหาประวัติที่มีเฉพาะของใหม่ (Transaction `IN`, `OUT`, และ `ADJUST` ที่มีคำว่า ของใหม่)
+  - `[x]` 1.2 Group ข้อมูลตาม Category -> ItemType -> Size
+- `[x]` 2. อัปเดต `admin.html`
+  - `[x]` 2.1 เพิ่ม Sidebar Menu "รายงานคลังพัสดุ"
+  - `[x]` 2.2 สร้าง HTML Container สำหรับตาราง Report และปุ่ม Export
+- `[x]` 3. อัปเดต `admin.js`
+  - `[x]` 3.1 เพิ่มฟังก์ชัน `loadStockReport()` เพื่อดึงข้อมูลจาก API
+  - `[x]` 3.2 สร้างฟังก์ชัน `renderStockReport()` นำข้อมูลมาวาดลงตาราง
+  - `[x]` 3.3 สร้างฟังก์ชัน `exportStockReportCSV()` เพื่อแปลงตารางเป็น CSV
