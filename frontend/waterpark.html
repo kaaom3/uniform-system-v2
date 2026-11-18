@@ -6,7 +6,6 @@
     <title>สวัสดิการเข้าสวนน้ำ (Waterpark Access)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -68,7 +67,7 @@
         }
     </style>
 </head>
-<body style="background-image: linear-gradient(rgba(240, 249, 255, 0.65), rgba(240, 249, 255, 0.65)), url('./bg-slides-new.png'); background-size: 100vw 100vh; background-attachment: fixed; background-position: center; background-repeat: no-repeat;" class="bg-[#f0f9ff] text-slate-700 min-h-screen relative overflow-x-hidden selection:bg-vana-pink selection:text-white pb-12">
+<body class="bg-[#f0f9ff] text-slate-700 min-h-screen relative overflow-x-hidden selection:bg-vana-pink selection:text-white pb-12">
     <!-- Animated Background Blobs -->
     <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div class="absolute top-0 -left-4 w-72 h-72 bg-vana-pink rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-blob"></div>
@@ -194,9 +193,6 @@
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-600 mb-1 ml-1 uppercase tracking-widest">แนบรูปถ่ายหน้าบัตร <span class="text-rose-500 normal-case ml-1 tracking-normal font-medium">(ขนาดไม่เกิน 2MB)</span></label>
                                         <input type="file" id="wp-guest-idcard" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-cyan-500/10 file:text-[#0054a8] hover:file:bg-cyan-500/20 cursor-pointer bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl transition-colors">
-                                        <button type="button" id="wp-guest-scan-btn" class="hidden w-full mt-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-[#0054a8] border border-cyan-500/30 font-bold py-2 px-3 rounded-xl transition-colors text-xs flex items-center justify-center gap-2">
-                                            🔍 สแกนข้อมูลจากรูป
-                                        </button>
                                     </div>
                                     <div>
                                         <input type="text" id="wp-guest-idcard-no" maxlength="13" placeholder="เลขบัตรประจำตัวประชาชน 13 หลัก" class="w-full py-3 px-4 bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl text-sm text-slate-800 placeholder-slate-500 outline-none transition-all focus:ring-2 focus:ring-primary-500 font-mono shadow-sm">
@@ -249,9 +245,6 @@
                     <div class="space-y-4">
                         <div>
                             <input type="file" id="wp-rel-idcard" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-cyan-500/20 file:text-[#0054a8] hover:file:bg-primary-200 cursor-pointer bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl transition-all">
-                            <button type="button" id="wp-rel-scan-btn" class="hidden w-full mt-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-[#0054a8] border border-cyan-500/30 font-bold py-2 px-3 rounded-xl transition-colors text-xs flex items-center justify-center gap-2">
-                                🔍 สแกนข้อมูลอัตโนมัติ
-                            </button>
                         </div>
                         <div>
                             <input type="text" id="wp-rel-idcard-no" maxlength="13" placeholder="เลขบัตรประชาชน 13 หลัก" class="w-full py-3 px-4 bg-white/80 backdrop-blur-xl shadow-lg border border-[#27aae1]/30 rounded-xl focus:ring-2 focus:ring-primary-500 text-sm text-slate-800 placeholder-slate-500 outline-none font-mono shadow-sm transition-all">

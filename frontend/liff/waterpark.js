@@ -521,94 +521,6 @@ window.closeWpHistoryModal = function() {
     setTimeout(() => { m.classList.add('hidden'); }, 300);
 }
 
-// Parse ID card data from OCR text using Tesseract
-async function scanThaiIDCard(fileInputId, prefix) {
-    const fileInput = document.getElementById(fileInputId);
-    const file = fileInput.files[0];
-    const btn = document.getElementById(`${prefix}scan-btn`);
-    
-    if (!file) return showNotification('กรุณาเลือกรูปภาพก่อนสแกน', 'error');
-
-    btn.dataset.isProcessing = 'true';
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> กำลังอ่าน...';
-    btn.disabled = true;
-
-    try {
-        if (typeof Tesseract === 'undefined') {
-            throw new Error('ระบบ OCR ยังไม่พร้อมใช้งาน กรุณาลองใหม่');
-        }
-
-        const worker = await Tesseract.createWorker('tha+eng');
-        const ret = await worker.recognize(file);
-        const text = ret.data.text;
-        await worker.terminate();
-
-        // 1. Regex หาเลข 13 หลัก
-        const cleanText = text.replace(/-/g, '').replace(/ /g, '');
-        const idMatch = cleanText.match(/\d{13}/);
-        if (idMatch) {
-            document.getElementById(`${prefix}idcard-no`).value = idMatch[0];
-        }
-
-        // 2. Regex หาชื่อ-สกุล (แบบง่าย)
-        const nameMatch = text.match(/(?:ชื่อตัวและชื่อสกุล|Name)\s*([ก-๙\s]+)/);
-        if (nameMatch) {
-            document.getElementById(`${prefix}name`).value = nameMatch[1].trim();
-        }
-
-        // Extract ID card number using regex
-        // ค้นหารูปแบบวันที่ เช่น "12 Jan 2028", "12 ม.ค. 2571", "12 ม ค 2571"
-        const dateRegex = /(\d{1,2})\s*([a-zA-Z]{3,4}|[ก-๙]\.?\s*[ก-๙]\.?)\s*(\d{4})/g;
-        let dates = [];
-        let match;
-        while ((match = dateRegex.exec(text)) !== null) {
-            dates.push({
-                day: match[1],
-                monthRaw: match[2],
-                year: parseInt(match[3])
-            });
-        }
-
-        if (dates.length > 0) {
-            // สมมติฐาน: วันหมดอายุ มักจะเป็นปีที่มากที่สุดในบัตร
-            dates.sort((a, b) => b.year - a.year);
-            let expDate = dates[0];
-
-            // ฟังก์ชันแปลงเดือนภาษาไทย/อังกฤษ เป็นตัวเลข 01-12
-            const parseMonth = (m) => {
-                const cleanM = m.replace(/[\.\s]/g, '').toLowerCase();
-                const monthMap = {
-                    'มค': '01', 'กพ': '02', 'มีค': '03', 'เมย': '04', 'พค': '05', 'มิย': '06',
-                    'กค': '07', 'สค': '08', 'กย': '09', 'ตค': '10', 'พย': '11', 'ธค': '12',
-                    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
-                    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
-                };
-                return monthMap[cleanM] || '01'; // Default เดือน 1 ถ้าหาไม่เจอ
-            };
-
-            let yyyy = expDate.year;
-            if (yyyy >= 2500) yyyy -= 543; // แปลง พ.ศ. เป็น ค.ศ.
-            
-            let mm = parseMonth(expDate.monthRaw);
-            let dd = expDate.day.padStart(2, '0');
-
-            // เติมลงใน input type="date" (format: YYYY-MM-DD)
-            const formattedDate = `${yyyy}-${mm}-${dd}`;
-            const expiryInput = document.getElementById(`${prefix}idcard-expiry`);
-            if(expiryInput) expiryInput.value = formattedDate;
-        }
-
-        showNotification('ดึงข้อมูลสำเร็จ กรุณาตรวจสอบและแก้ไขให้ถูกต้องอีกครั้ง', 'success');
-    } catch (e) {
-        showNotification('สแกนไม่สำเร็จ กรุณากรอกข้อมูลเอง', 'error');
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        btn.dataset.isProcessing = 'false';
-    }
-}
-
 function setupEventListeners() {
     
     const toggleFreeformBtn = document.getElementById('wp-toggle-freeform-btn');
@@ -625,22 +537,6 @@ function setupEventListeners() {
         freeformSection.classList.add('hidden');
         toggleContainer.classList.remove('hidden');
     });
-
-    // Bind OCR scan button handlers
-    document.getElementById('wp-rel-idcard')?.addEventListener('change', (e) => {
-        const btn = document.getElementById('wp-rel-scan-btn');
-        if (e.target.files.length > 0) btn.classList.remove('hidden');
-        else btn.classList.add('hidden');
-    });
-    
-    document.getElementById('wp-guest-idcard')?.addEventListener('change', (e) => {
-        const btn = document.getElementById('wp-guest-scan-btn');
-        if (e.target.files.length > 0) btn.classList.remove('hidden');
-        else btn.classList.add('hidden');
-    });
-
-    document.getElementById('wp-rel-scan-btn')?.addEventListener('click', () => scanThaiIDCard('wp-rel-idcard', 'wp-rel-'));
-    document.getElementById('wp-guest-scan-btn')?.addEventListener('click', () => scanThaiIDCard('wp-guest-idcard', 'wp-guest-'));
 
     // นำเข้าตะกร้าญาติ (เตรียมบันทึก)
     document.getElementById('wp-btn-add-rel')?.addEventListener('click', async (e) => {
@@ -674,7 +570,6 @@ function setupEventListeners() {
         document.getElementById('wp-rel-idcard-no').value = '';
         document.getElementById('wp-rel-idcard-expiry').value = '';
         fileInput.value = '';
-        document.getElementById('wp-rel-scan-btn').classList.add('hidden'); // ซ่อนปุ่มสแกน
         
         renderRelativesCart();
     });
@@ -841,7 +736,6 @@ function setupEventListeners() {
         document.getElementById('wp-guest-idcard-no').value = '';
         document.getElementById('wp-guest-idcard-expiry').value = '';
         fileInput.value = '';
-        document.getElementById('wp-guest-scan-btn').classList.add('hidden'); // ซ่อนปุ่มสแกน
         
         freeformSection.classList.add('hidden');
         toggleContainer.classList.remove('hidden');
@@ -961,102 +855,6 @@ window.closeImageModal = function() {
         modal.classList.add('hidden');
         target.src = '';
     }, 300);
-}
-
-// Parse ID card data from OCR text using Tesseract
-async function scanThaiIDCard(fileInputId, prefix) {
-    const fileInput = document.getElementById(fileInputId);
-    const file = fileInput.files[0];
-    const btn = document.getElementById(`${prefix}scan-btn`);
-    
-    if (!file) return showNotification('กรุณาเลือกรูปภาพก่อนสแกน', 'error');
-
-    btn.dataset.isProcessing = 'true';
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> กำลังอ่าน...';
-    btn.disabled = true;
-
-    try {
-        if (typeof Tesseract === 'undefined') {
-            throw new Error('ระบบ OCR ยังไม่พร้อมใช้งาน กรุณาลองใหม่');
-        }
-
-        const worker = await Tesseract.createWorker('tha+eng');
-        const ret = await worker.recognize(file);
-        const text = ret.data.text;
-        await worker.terminate();
-
-        // 1. Regex หาเลข 13 หลัก
-        const cleanText = text.replace(/-/g, '').replace(/ /g, '');
-        const idMatch = cleanText.match(/\d{13}/);
-        if (idMatch) {
-            document.getElementById(`${prefix}idcard-no`).value = idMatch[0];
-        }
-
-        // 2. Regex หาชื่อ-สกุล (ปรับให้จับคำนำหน้า นาย/นาง/นางสาว จะแม่นกว่าจับคำว่า "ชื่อตัว")
-        const nameRegex = /(นาย|นาง|นางสาว|ด\.ช\.|ด\.ญ\.)\s*([ก-๙]+)\s+([ก-๙]+)/;
-        const nameMatch = text.match(nameRegex);
-        if (nameMatch) {
-            document.getElementById(`${prefix}name`).value = `${nameMatch[1]}${nameMatch[2]} ${nameMatch[3]}`;
-        } else {
-            // Fallback หาบรรทัดถัดจากคำว่า Name หรือ ชื่อ
-            const altNameMatch = text.match(/(?:ชื่อ|Name)[^\n]*\n\s*([ก-๙a-zA-Z\s]+)/i);
-            if (altNameMatch && altNameMatch[1]) {
-                document.getElementById(`${prefix}name`).value = altNameMatch[1].trim();
-            }
-        }
-
-        // 3. Regex หาวันหมดอายุ (ปรับให้ยืดหยุ่นเรื่องช่องว่างและจุดที่ OCR มักอ่านพลาด)
-        const dateRegex = /(\d{1,2})\s*([ก-๙a-zA-Z\.\s]+?)\s*((?:25|20)\d{2})/g;
-        let dates = [];
-        let match;
-        while ((match = dateRegex.exec(text)) !== null) {
-            dates.push({
-                day: match[1].trim(),
-                monthRaw: match[2].trim(),
-                year: parseInt(match[3])
-            });
-        }
-
-        if (dates.length > 0) {
-            // สมมติฐาน: วันหมดอายุ มักจะเป็นปีที่มากที่สุดในบัตร
-            dates.sort((a, b) => b.year - a.year);
-            let expDate = dates[0];
-
-            const parseMonth = (m) => {
-                const cleanM = m.replace(/[\.\s]/g, '').toLowerCase();
-                const monthMap = {
-                    'มค': '01', 'กพ': '02', 'มีค': '03', 'เมย': '04', 'พค': '05', 'มิย': '06',
-                    'กค': '07', 'สค': '08', 'กย': '09', 'ตค': '10', 'พย': '11', 'ธค': '12',
-                    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
-                    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
-                };
-                // ค้นหาว่ามีตัวย่อเดือนซ่อนอยู่ในข้อความที่อ่านมาได้หรือไม่ (กันกรณีมีตัวอักษรอื่นปน)
-                for (const key in monthMap) {
-                    if (cleanM.includes(key)) return monthMap[key];
-                }
-                return '01'; // Default เดือน 1 ถ้าหาไม่เจอจริงๆ
-            };
-
-            let yyyy = expDate.year;
-            if (yyyy >= 2500) yyyy -= 543; // แปลง พ.ศ. เป็น ค.ศ.
-            
-            let mm = parseMonth(expDate.monthRaw);
-            let dd = expDate.day.padStart(2, '0');
-
-            const formattedDate = `${yyyy}-${mm}-${dd}`;
-            const expiryInput = document.getElementById(`${prefix}idcard-expiry`);
-            if(expiryInput) expiryInput.value = formattedDate;
-        }
-
-        showNotification('ดึงข้อมูลสำเร็จ กรุณาตรวจสอบและแก้ไขให้ถูกต้องอีกครั้ง', 'success');
-    } catch (e) {
-        showNotification('สแกนไม่สำเร็จ กรุณากรอกข้อมูลเอง', 'error');
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        btn.dataset.isProcessing = 'false';
-    }
 }
 
 function showNotification(msg, type='success') { 
